@@ -9,6 +9,8 @@
 // image convoluée en entiers 8 bits pour des limitations de mémoire [old : 16 bits conceptuellement Q8.8 (valeur réelle = val / 256)]
 static uint8_t im_conv[IDIM*JDIM];
 static uint32_t points_ref[MAX_POINTS];
+static uint32_t points_trans[MAX_POINTS];
+
 
 void setup() {
   Serial.begin(115200);

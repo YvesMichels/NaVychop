@@ -10,6 +10,7 @@
 #define SYNC_1      0xAA
 #define SYNC_2      0x55
 #define IMG_FORMAT  0x01   // mono 8 bits
+#define POINT_FORMAT  0x04   // mono 32 bits
 
 #define KERNEL_RADIUS_9 4
 #define KERNEL_SIZE_9 9
@@ -18,7 +19,7 @@
 #define KERNEL_RADIUS 7
 
 #define BLOCK_SIZE 16
-#define DEBUG_PTS 1
+#define DEBUG_PTS 0
 
 // constantes pour l'affichage en ascii
 const int OUT_W = 160;
@@ -357,8 +358,8 @@ static inline void draw_cross_3x3(
     img[(y + 1) * JDIM + x] = 255;
 }
 
-uint16_t mark_gradient_max_blocks_16x16(
-    const uint8_t *im_grad,
+uint16_t gradient_max_blocks_16x16(
+    uint8_t *im_grad,
     uint8_t *im_gauss, 
     uint32_t *points_ref
 )
@@ -412,7 +413,30 @@ uint16_t mark_gradient_max_blocks_16x16(
     }
     return n_points;
 }
+void mark_points(uint8_t *im, uint32_t *points_ref, uint16_t nb_points){
+    int32_t y;
+    int32_t x;
+    uint8_t grad;
+    for (uint16_t i = 0; i < nb_points; i++) {
+        // Extraction
+        y    = (points_ref[i] >> 23) & 0x1FF;  // 9 bits
+        x    = (points_ref[i] >> 14) & 0x1FF;  // 9 bits
+        //pix_val  = (points_ref[i] >> 6)  & 0xFF;   // 8 bits
+        grad =  points_ref[i]        & 0x3F;   // 6 bits
 
+        if(grad>5) {
+            draw_cross_3x3(im, x, y);
+        }
+    }
+}
+
+void copy_image(uint8_t *out, const uint8_t *in, uint32_t n_pixels)
+{
+    for (uint32_t i = 0; i < n_pixels; i++)
+    {
+        out[i] = in[i];
+    }
+}
 
 // --- I/O / debug ---
 void send_image(uint8_t *img)
@@ -496,4 +520,39 @@ void image_ascii(uint8_t *img)
     }
     Serial.println();
   }
+}
+
+void send_point(const uint32_t *points, uint16_t max_points)
+{
+    uint8_t checksum = 0;
+
+    // Synchronisation
+    Serial.write(SYNC_1);
+    Serial.write(SYNC_2);
+
+    // Nombre de points (16 bits, LSB first)
+    Serial.write((uint8_t)(max_points & 0xFF));
+    Serial.write((uint8_t)(max_points >> 8));
+
+    // Format (optionnel mais recommandé)
+    Serial.write(POINT_FORMAT);
+
+    // Payload : MAX_POINTS mots de 32 bits
+    for (uint32_t i = 0; i < max_points; i++) {
+        uint32_t p = points[i];
+
+        // Envoi LSB -> MSB
+        uint8_t b0 = (uint8_t)( p        & 0xFF);
+        uint8_t b1 = (uint8_t)((p >> 8 ) & 0xFF);
+        uint8_t b2 = (uint8_t)((p >> 16) & 0xFF);
+        uint8_t b3 = (uint8_t)((p >> 24) & 0xFF);
+
+        Serial.write(b0); checksum ^= b0;
+        Serial.write(b1); checksum ^= b1;
+        Serial.write(b2); checksum ^= b2;
+        Serial.write(b3); checksum ^= b3;
+    }
+
+    // Checksum final
+    Serial.write(checksum);
 }

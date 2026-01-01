@@ -25,59 +25,64 @@ bits 31 ............... 23 | 22 ............... 14 | 13 .............. 6 | 5 ...
 #define SIN_LUT_SIZE 128
 
 // LUT 129 valeurs en Q1.15
-const int16_t sin_lut[SIN_LUT_SIZE + 1] = {
-      0,   402,   804,  1206,  1608,  2009,  2411,  2811,
-   3212,  3612,  4011,  4410,  4808,  5205,  5601,  5997,
-   6392,  6786,  7179,  7571,  7962,  8352,  8740,  9128,
-   9514,  9899, 10283, 10665, 11046, 11425, 11803, 12180,
-  12555, 12928, 13300, 13670, 14038, 14405, 14770, 15133,
-  15495, 15855, 16213, 16569, 16924, 17276, 17627, 17976,
-  18323, 18668, 19011, 19352, 19691, 20028, 20363, 20696,
-  21027, 21355, 21682, 22006, 22328, 22648, 22966, 23281,
-  23594, 23905, 24214, 24520, 24824, 25126, 25425, 25722,
-  26016, 26308, 26598, 26885, 27170, 27452, 27732, 28009,
-  28284, 28556, 28826, 29093, 29358, 29620, 29879, 30136,
-  30390, 30642, 30891, 31138, 31382, 31623, 31862, 32098,
-  32331, 32562, 32790, 32767
+static const int16_t sin_lut[SIN_LUT_SIZE + 1] = {
+        0,    402,    804,   1206,   1608,   2009,   2410,   2811,
+     3212,   3612,   4011,   4410,   4808,   5205,   5602,   5998,
+     6393,   6786,   7179,   7571,   7962,   8351,   8739,   9126,
+     9512,   9896,  10278,  10659,  11039,  11417,  11793,  12167,
+    12539,  12910,  13279,  13645,  14010,  14372,  14732,  15090,
+    15446,  15800,  16151,  16499,  16846,  17189,  17530,  17869,
+    18204,  18537,  18868,  19195,  19519,  19841,  20159,  20475,
+    20787,  21096,  21403,  21705,  22005,  22301,  22594,  22884,
+    23170,  23452,  23731,  24007,  24279,  24547,  24811,  25072,
+    25329,  25582,  25832,  26077,  26319,  26556,  26790,  27019,
+    27245,  27466,  27683,  27896,  28105,  28310,  28510,  28706,
+    28898,  29085,  29268,  29447,  29621,  29791,  29956,  30117,
+    30273,  30424,  30571,  30714,  30852,  30985,  31113,  31237,
+    31356,  31470,  31580,  31685,  31785,  31880,  31971,  32057,
+    32137,  32213,  32285,  32351,  32412,  32469,  32521,  32567,
+    32609,  32646,  32678,  32705,  32728,  32745,  32757,  32765,
+    32767,
 };
 
 static inline int32_t q16_mul(int32_t a, int32_t b) {
     return (int32_t)(((int64_t)a * b) >> Q16_SHIFT);
 }
 
-int32_t q16_sin(int32_t theta) {
-    // Normalisation
-    while (theta < 0) theta += TWO_PI_Q16;
+int32_t q16_sin(int32_t theta)
+{
+    // normalisation [0, 2π[
+    while (theta < 0)           theta += TWO_PI_Q16;
     while (theta >= TWO_PI_Q16) theta -= TWO_PI_Q16;
 
     int sign = 1;
 
-    if (theta > PI_Q16) {
+    // quadrant 3 & 4
+    if (theta >= PI_Q16) {
         theta -= PI_Q16;
         sign = -1;
     }
 
+    // quadrant 2
     if (theta > HALF_PI_Q16) {
         theta = PI_Q16 - theta;
     }
 
-    // position fractionnaire sur la LUT (Q16.16)
-    int32_t pos = (theta * SIN_LUT_SIZE << Q16_SHIFT) / HALF_PI_Q16;
+    // maintenant : theta ∈ [0, π/2]
 
-    int32_t idx  = pos >> Q16_SHIFT;
-    int32_t frac = pos & 0xFFFF;   // fraction Q0.16
+    int32_t pos = ((int64_t)theta * SIN_LUT_SIZE << 16) / HALF_PI_Q16;
+    int32_t idx  = pos >> 16;
+    int32_t frac = pos & 0xFFFF;
 
     if (idx >= SIN_LUT_SIZE)
-        return sign * ((int32_t)sin_lut[SIN_LUT_SIZE] << 1);
+        return sign * (32767 << 1);
 
-    // interpolation linéaire
     int32_t y0 = sin_lut[idx];
     int32_t y1 = sin_lut[idx + 1];
 
-    int32_t y = y0 + ((y1 - y0) * frac >> Q16_SHIFT);
+    int32_t y = y0 + (((y1 - y0) * frac) >> 16);
 
-    // Q1.15 -> Q16.16
-    return sign * (y << 1);
+    return sign * (y << 1);   // Q16.16
 }
 
 
@@ -109,7 +114,7 @@ uint32_t transform_point(
 
     // Divergence radiale (trapèze)
     // scale = 1 + div * dy
-    int32_t scale = Q16_ONE + q16_mul(div, dy);
+    int32_t scale = Q16_ONE + div;
     dx = q16_mul(dx, scale);
     dy = q16_mul(dy, scale);
 
@@ -121,6 +126,8 @@ uint32_t transform_point(
     int32_t dy_r = q16_mul(dx, s) + q16_mul(dy, c);
 
     // Retour image + translation
+    //int32_t x_out = vp_x + dx_r + tx;
+    //int32_t y_out = vp_y + dy_r + ty;
     int32_t x_out = vp_x + dx_r + tx;
     int32_t y_out = vp_y + dy_r + ty;
 
@@ -140,7 +147,7 @@ uint32_t transform_point(
 }
 
 void transform_points(
-    const uint32_t *points_in,
+    uint32_t *points_in,
     uint32_t *points_out,
     uint16_t nb_points,
     int32_t vp_x, int32_t vp_y,

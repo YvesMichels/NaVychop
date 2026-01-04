@@ -20,5 +20,6 @@ void send_image(uint8_t *img);
 void send_im_16bits_8bits(uint16_t *img);
 void image_ascii(uint8_t *img);
 void send_point(const uint32_t *points, uint16_t max_points);
+void send_motion_data(uint8_t *img, uint16_t img_width, uint16_t img_height, uint32_t *points, uint16_t max_points);
 
 #endif

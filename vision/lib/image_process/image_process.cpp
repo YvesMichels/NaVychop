@@ -9,8 +9,11 @@
 
 #define SYNC_1      0xAA
 #define SYNC_2      0x55
-#define IMG_FORMAT  0x01   // mono 8 bits
-#define POINT_FORMAT  0x04   // mono 32 bits
+#define SYNC_3      0xCC
+#define SYNC_4      0x33
+#define IMG_FORMAT      0x01   // mono 8 bits
+#define POINT_FORMAT    0x04   // mono 32 bits
+#define META_FORMAT     0x04   // mono 32 bits
 
 #define KERNEL_RADIUS_9 4
 #define KERNEL_SIZE_9 9
@@ -554,5 +557,67 @@ void send_point(const uint32_t *points, uint16_t max_points)
     }
 
     // Checksum final
+    Serial.write(checksum);
+}
+
+void send_motion_data(uint8_t *img, uint16_t img_width, uint16_t img_height,
+                      uint32_t *points, uint16_t max_points)
+{
+    uint8_t checksum = 0;
+    uint32_t img_size = img_width * img_height;
+
+    // --- Synchronisation 4 octets ---
+    Serial.write(SYNC_1);
+    Serial.write(SYNC_2);
+    Serial.write(SYNC_3);
+    Serial.write(SYNC_4);
+
+    // --- Image ---
+    Serial.write((uint8_t)(img_width & 0xFF));
+    Serial.write((uint8_t)(img_width >> 8));
+    Serial.write((uint8_t)(img_height & 0xFF));
+    Serial.write((uint8_t)(img_height >> 8));
+    Serial.write(IMG_FORMAT);
+
+    for (uint32_t i = 0; i < img_size; i++) {
+        uint8_t v = img[i];
+        Serial.write(v);
+        checksum ^= v;
+    }
+
+    // --- Points ---
+    Serial.write((uint8_t)(max_points & 0xFF));
+    Serial.write((uint8_t)(max_points >> 8));
+    Serial.write(POINT_FORMAT);
+
+    for (uint16_t i = 0; i < max_points; i++) {
+        uint32_t p = points[i];
+        uint8_t b0 = (uint8_t)(p & 0xFF);
+        uint8_t b1 = (uint8_t)((p >> 8) & 0xFF);
+        uint8_t b2 = (uint8_t)((p >> 16) & 0xFF);
+        uint8_t b3 = (uint8_t)((p >> 24) & 0xFF);
+
+        Serial.write(b0); checksum ^= b0;
+        Serial.write(b1); checksum ^= b1;
+        Serial.write(b2); checksum ^= b2;
+        Serial.write(b3); checksum ^= b3;
+    }
+
+    // --- Méta-données 256 octets ---
+    Serial.write(META_FORMAT);
+    for (uint16_t i = 0; i < 64; i++) { // 64 mots de 32 bits = 256 octets
+        uint32_t m = 0;
+        uint8_t b0 = (uint8_t)(m & 0xFF);
+        uint8_t b1 = (uint8_t)((m >> 8) & 0xFF);
+        uint8_t b2 = (uint8_t)((m >> 16) & 0xFF);
+        uint8_t b3 = (uint8_t)((m >> 24) & 0xFF);
+
+        Serial.write(b0); checksum ^= b0;
+        Serial.write(b1); checksum ^= b1;
+        Serial.write(b2); checksum ^= b2;
+        Serial.write(b3); checksum ^= b3;
+    }
+
+    // --- Checksum final ---
     Serial.write(checksum);
 }

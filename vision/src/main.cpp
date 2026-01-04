@@ -67,23 +67,18 @@ void loop() {
   uint16_t img_conv[IDIM*JDIM];
 
   // convolue l'image avec un noyeau gaussien de taille 9x9
-  //digitalWrite(LED_FLASH_PIN, HIGH);   // début mesure
+  digitalWrite(LED_FLASH_PIN, HIGH);   // début mesure
   gaussian_blur_15x15_stream_8bits(im_conv, img);
   norme_gradient_L1_8bits(img, im_conv);
   gradient_max_blocks_16x16(img, im_conv, points_ref);
 
-  transform_points(points_ref, points_trans, MAX_POINTS, 160*65536 , 120*65536, 0, 0, 0, 0);
-  //copy_image(img, im_conv, 76800);
-  //mark_points(img, points_trans, MAX_POINTS);
-  //digitalWrite(LED_FLASH_PIN, LOW);    // fin mesure
+  digitalWrite(LED_FLASH_PIN, LOW);    // fin mesure
 
   // envoie 
-  //send_image(img);
-  //send_point(points_ref, MAX_POINTS);
-  //verification_q16_sin(points_trans, MAX_POINTS);
-  verification_tranformation(points_ref, points_trans, MAX_POINTS);
+  send_motion_data(im_conv, JDIM, IDIM, points_ref, MAX_POINTS);
+
   esp_camera_fb_return(fb);
 
 
-  delay(100);  // 
+  delay(3000);  // 
 }

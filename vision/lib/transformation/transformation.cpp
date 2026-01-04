@@ -12,14 +12,16 @@ bits 31 ............... 23 | 22 ............... 14 | 13 .............. 6 | 5 ...
         y (9 bits)              x (9 bits)             valeur pixel         valeur HF
 */
 
-#define Y_SHIFT 23
-#define X_SHIFT 14
-#define COORD_MASK 0x1FF      // 9 bits
-#define LOW_MASK   0x3FFF     // 14 bits
-#define Q16_SHIFT 16
-#define Q16_ONE   (1 << Q16_SHIFT)
-#define PI_Q16    205887   // π   * 2^16
-#define TWO_PI_Q16 (2 * PI_Q16)
+#define Y_SHIFT     23
+#define X_SHIFT     14
+#define PIX_SHIFT   6
+#define COORD_MASK  0x1FF   // 9 bits
+#define LOW_MASK    0x3FFF  // 14 bits
+#define PIX_MASK    0xFF    // 8 bits
+#define Q16_SHIFT   16
+#define Q16_ONE     (1 << Q16_SHIFT)
+#define PI_Q16      205887   // π   * 2^16
+#define TWO_PI_Q16  (2 * PI_Q16)
 #define HALF_PI_Q16 (PI_Q16 / 2)
 
 #define SIN_LUT_SIZE 128
@@ -96,7 +98,8 @@ uint32_t transform_point(
     uint32_t p,
     int32_t vp_x, int32_t vp_y,
     int32_t tx, int32_t ty,
-    int32_t theta,
+    int32_t sin_theta,
+    int32_t cos_theta,
     int32_t div
 ) {
     // Extraction
@@ -113,17 +116,14 @@ uint32_t transform_point(
     int32_t dy = y_q - vp_y;
 
     // Divergence radiale (trapèze)
-    // scale = 1 + div * dy
+    // scale = 1 + div
     int32_t scale = Q16_ONE + div;
     dx = q16_mul(dx, scale);
     dy = q16_mul(dy, scale);
 
     // Rotation
-    int32_t c = q16_cos(theta);
-    int32_t s = q16_sin(theta);
-
-    int32_t dx_r = q16_mul(dx, c) - q16_mul(dy, s);
-    int32_t dy_r = q16_mul(dx, s) + q16_mul(dy, c);
+    int32_t dx_r = q16_mul(dx, cos_theta) - q16_mul(dy, sin_theta);
+    int32_t dy_r = q16_mul(dx, sin_theta) + q16_mul(dy, cos_theta);
 
     // Retour image + translation
     //int32_t x_out = vp_x + dx_r + tx;
@@ -155,13 +155,118 @@ void transform_points(
     int32_t theta,
     int32_t div
 ) {
+    // pre-calcul rotation
+    int32_t cos_theta = q16_cos(theta);
+    int32_t sin_theta = q16_sin(theta);
     for (uint16_t i = 0; i < nb_points; i++) {
-        points_out[i] = transform_point(
-            points_in[i],
-            vp_x, vp_y,
-            tx, ty,
-            theta,
-            div
-        );
+        points_out[i] = transform_point(points_in[i], vp_x, vp_y, tx, ty, sin_theta, cos_theta, div);
     }
+}
+
+void ssd_huber_gradient_q16(
+    const uint32_t *points_ref,
+    int nb_points,
+    const uint8_t *img_cur,
+    int width, int height,
+
+    const transform_param_q16_t *p,
+
+    int32_t huber_delta_q16,
+    transform_grad_q16_t *g_out
+)
+{
+    int64_t g_div = 0;
+    int64_t g_theta = 0;
+    int64_t g_tx = 0;
+    int64_t g_ty = 0;
+
+    int32_t c = q16_cos(p->theta);
+    int32_t s = q16_sin(p->theta);
+    int32_t scale = Q16_ONE + p->div;
+
+    for (int i = 0; i < nb_points; i++) {
+
+        uint32_t w = points_ref[i];
+
+        /* ---- extraction point référence ---- */
+        int32_t y = (w >> Y_SHIFT) & COORD_MASK;
+        int32_t x = (w >> X_SHIFT) & COORD_MASK;
+        int32_t pix_ref = (w >> PIX_SHIFT) & PIX_MASK;
+        /* HF_im disponible mais non utilisé */
+
+        if (x <= 0 || x >= width - 1 ||
+            y <= 0 || y >= height - 1)
+            continue;
+
+        /* ---- coordonnées Q16 ---- */
+        int32_t x_q = x << Q16_SHIFT;
+        int32_t y_q = y << Q16_SHIFT;
+
+        int32_t dx = x_q - p->vp_x;
+        int32_t dy = y_q - p->vp_y;
+
+        int32_t dxp = q16_mul(dx, scale);
+        int32_t dyp = q16_mul(dy, scale);
+
+        int32_t dxr = q16_mul(dxp, c) - q16_mul(dyp, s);
+        int32_t dyr = q16_mul(dxp, s) + q16_mul(dyp, c);
+
+        int32_t xw = p->vp_x + dxr + p->tx;
+        int32_t yw = p->vp_y + dyr + p->ty;
+
+        int xi = xw >> Q16_SHIFT;
+        int yi = yw >> Q16_SHIFT;
+
+        if (xi <= 0 || xi >= width - 1 ||
+            yi <= 0 || yi >= height - 1)
+            continue;
+
+        /* ---- erreur photométrique ---- */
+        int32_t Ic = img_cur[yi * width + xi];
+        int32_t e = Ic - pix_ref;          // Q0
+        int32_t e_q = e << Q16_SHIFT;      // Q16.16
+
+        /* ---- Huber : résidu tronqué ---- */
+        int32_t abs_e = (e_q >= 0) ? e_q : -e_q;
+        int32_t e_huber;
+
+        if (abs_e <= huber_delta_q16) {
+            e_huber = e_q;
+        } else {
+            e_huber = (e_q >= 0) ? huber_delta_q16 : -huber_delta_q16;
+        }
+
+        /* ---- gradient image (image courante) ---- */
+        int32_t Ix =
+            ((int32_t)img_cur[yi * width + xi + 1]
+           - (int32_t)img_cur[yi * width + xi - 1]) << Q16_SHIFT;
+
+        int32_t Iy =
+            ((int32_t)img_cur[(yi + 1) * width + xi]
+           - (int32_t)img_cur[(yi - 1) * width + xi]) << Q16_SHIFT;
+
+        /* ---- dérivées géométriques ---- */
+        int32_t dxd_div = q16_mul(dx, c) - q16_mul(dy, s);
+        int32_t dyd_div = q16_mul(dx, s) + q16_mul(dy, c);
+
+        int32_t dxd_th = -q16_mul(dxp, s) - q16_mul(dyp, c);
+        int32_t dyd_th =  q16_mul(dxp, c) - q16_mul(dyp, s);
+
+        /* ---- accumulation gradient ---- */
+        g_div += (int64_t)e_huber *
+                 ((int64_t)Ix * dxd_div +
+                  (int64_t)Iy * dyd_div) >> Q16_SHIFT;
+
+        g_theta += (int64_t)e_huber *
+                   ((int64_t)Ix * dxd_th +
+                    (int64_t)Iy * dyd_th) >> Q16_SHIFT;
+
+        g_tx += (int64_t)e_huber * Ix;
+        g_ty += (int64_t)e_huber * Iy;
+    }
+
+    g_out->div   = (int32_t)(g_div   >> Q16_SHIFT);
+    g_out->theta = (int32_t)(g_theta >> Q16_SHIFT);
+    g_out->tx    = (int32_t)(g_tx    >> Q16_SHIFT);
+    g_out->ty    = (int32_t)(g_ty    >> Q16_SHIFT);
 }

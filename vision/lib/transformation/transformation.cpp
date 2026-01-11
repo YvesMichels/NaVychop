@@ -163,14 +163,12 @@ void transform_points(
     }
 }
 
-void ssd_huber_gradient_q16(
+void huber_gradient_q16(
     const uint32_t *points_ref,
     int nb_points,
     const uint8_t *img_cur,
     int width, int height,
-
     const transform_param_q16_t *p,
-
     int32_t huber_delta_q16,
     transform_grad_q16_t *g_out
 )

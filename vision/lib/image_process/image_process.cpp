@@ -21,25 +21,25 @@
 #define KERNEL_SIZE   15
 #define KERNEL_RADIUS 7
 
+#define EDGE_SIZE 16
 #define BLOCK_SIZE 16
+#define BLOCK_SIZE_R 4
+
+#define Q16_SHIFT   16
+#define Q16_ONE     (1 << Q16_SHIFT)
+
+#define FACT_R 8
+#define R_SHIFT 6 // décalage de bits pour difisser par FACT_R^2
+
+/* 
+    Variable de test
+*/
 #define DEBUG_PTS 0
+#define GAUSSIAN_OPTI 1
 
-// constantes pour l'affichage en ascii
-const int OUT_W = 160;
-const int OUT_H = 40;
-const int BLOCK_W = 2;
-const int BLOCK_H = 6;
-const char* ASCII_RAMP = " .:-=+*#%@"; // ASCII ramp du plus sombre au plus clair
-const int ASCII_LEN = 10;
+// constante pour le filtrage gaussien sigma = 4 pixels (somme = 256 = 2^GAUSS_SHIFT)
+static const uint8_t gauss15[15] = {2, 4, 8, 16, 21, 28, 34, 36, 34, 28, 21, 13, 8, 4, 2};
 
-// constante pour le filtrage gaussien (somme = 256 = 2^GAUSS_SHIFT)
-static const uint16_t gauss9[9] = {
-     1,  8, 28, 56, 70, 56, 28,  8,  1
-};
-static const uint8_t gauss15[15] = {
-     0,  0,  1,  6, 16, 31, 47, 54,
-    47, 31, 16,  6,  1,  0,  0
-};
 // row_buf: buffer intermédiaire 9 lignes (≈5.6 kB)
 // Utilisé uniquement pour convolution séparable
 //static uint16_t row_buf[KERNEL_SIZE_9][JDIM];
@@ -69,120 +69,62 @@ void hist_cum(uint32_t *histo, uint8_t *img){
   }
 }
 
-static void gaussian9_horizontal_line_8bits(
-    uint16_t *out,
-    const uint8_t *in_line
-)
+int32_t read_bilineaire(const uint8_t* image, int32_t x_q, int32_t y_q, int idim, int jdim)
 {
-    for (int j = 0; j < JDIM; j++) {
-        uint32_t acc = 0;
+    // Partie entière
+    int32_t x0 = x_q >> Q16_SHIFT;
+    int32_t y0 = y_q >> Q16_SHIFT;
 
-        for (int k = 0; k < KERNEL_SIZE_9; k++) {
-            int jj = j + k - KERNEL_RADIUS_9;
-
-            if (jj < 0)          jj = 0;
-            else if (jj >= JDIM) jj = JDIM - 1;
-
-            acc += gauss9[k] * in_line[jj];
-        }
-
-        out[j] = (uint16_t)acc;   // Q8.8
+    // Vérification des bornes (on évite x0+1, y0+1 hors image)
+    if (x0 < 0 || x0 >= idim - 1 ||
+        y0 < 0 || y0 >= jdim - 1)
+    {
+        return 0;
     }
+
+    // Partie fractionnaire (Q16.16)
+    int32_t fx = x_q & (Q16_ONE - 1);
+    int32_t fy = y_q & (Q16_ONE - 1);
+
+    int32_t fx1 = Q16_ONE - fx;
+    int32_t fy1 = Q16_ONE - fy;
+
+    // Accès pixels (8 bits)
+    int32_t I00 = image[y0 * jdim + x0];
+    int32_t I10 = image[y0 * jdim + (x0 + 1)];
+    int32_t I01 = image[(y0 + 1) * jdim + x0];
+    int32_t I11 = image[(y0 + 1) * jdim + (x0 + 1)];
+
+    // Interpolation bilinéaire factorisée
+    // Étape X
+    int32_t i0 = I00 * fx1 + I10 * fx;  // Q16.16
+    int32_t i1 = I01 * fx1 + I11 * fx;  // Q16.16
+
+    // Étape Y
+    int32_t i  = i0 * fy1 + i1 * fy;    // Q32.32 → implicitement
+
+    // Normalisation finale vers Q16.16
+    return i >> Q16_SHIFT;
 }
 
-static void gaussian9_vertical_from_rows_8bits(
-    uint8_t *out_line,
-    uint16_t rows[KERNEL_SIZE][JDIM],
-    int ind_ker
-)
+static void gaussian15_horizontal_line_8bits(uint16_t *out, const uint8_t *in_line, int jdim)
 {
-    for (int j = 0; j < JDIM; j++) {
-        uint32_t acc = 0;
-
-        for (int k = 0; k < KERNEL_SIZE_9; k++) {
-            int idx = k - ind_ker;
-            if (idx < 0) idx += KERNEL_SIZE_9;
-
-            acc += gauss9[idx] * rows[k][j];
-        }
-
-        out_line[j] = (uint8_t)(acc >> 16); // Q16.16 → 8 bits
-    }
-}
-
-void gaussian_blur_9x9_stream_8bits(
-    uint8_t *out,
-    const uint8_t *in
-)
-{
-    /* === Pré-remplissage vertical correct (clamp haut) === */
-    for (int k = 0; k < KERNEL_SIZE_9; k++) {
-
-        int src_i = k - KERNEL_RADIUS_9;
-        if (src_i < 0)        src_i = 0;
-        if (src_i >= IDIM)    src_i = IDIM - 1;
-
-        gaussian9_horizontal_line_8bits(
-            row_buf[k],
-            &in[src_i * JDIM]
-        );
-    }
-
-    /* === Boucle principale streaming === */
-    int ind_ker = KERNEL_RADIUS_9;
-
-    for (int i = 0; i < IDIM; i++) {
-
-        /* Convolution verticale centrée sur la ligne i */
-        gaussian9_vertical_from_rows_8bits(
-            &out[i * JDIM],
-            row_buf,
-            ind_ker
-        );
-
-        /* Préparation de la prochaine ligne horizontale */
-        int next_i = i + KERNEL_RADIUS_9 + 1;
-        if (next_i >= IDIM)
-            next_i = IDIM - 1;
-
-        ind_ker = (ind_ker + 1) % KERNEL_SIZE_9;
-
-        gaussian9_horizontal_line_8bits(
-            row_buf[ind_ker],
-            &in[next_i * JDIM]
-        );
-    }
-}
-
-
-static void gaussian15_horizontal_line_8bits(
-    uint16_t *out,
-    const uint8_t *in_line
-)
-{
-    for (int j = 0; j < JDIM; j++) {
+    /* Zone valide */
+    for (int j = 0; j <= jdim - KERNEL_SIZE; j++) {
         uint32_t acc = 0;
 
         for (int k = 0; k < KERNEL_SIZE; k++) {
-            int jj = j + k - KERNEL_RADIUS;
-
-            if (jj < 0)        jj = 0;
-            else if (jj >= JDIM) jj = JDIM - 1;
-
-            acc += gauss15[k] * in_line[jj];
+            acc += gauss15[k] * in_line[j + k];
         }
-
-        out[j] = (uint16_t)acc;   // Q8.8
+        out[j] = (uint16_t)acc;  // Q8.8
     }
 }
 
-static void gaussian15_vertical_from_rows_8bits(
-    uint8_t *out_line,
-    uint16_t rows[KERNEL_SIZE][JDIM],
-    int ind_ker
-)
+
+static void gaussian15_vertical_from_rows_8bits(uint8_t *out_line, uint16_t rows[KERNEL_SIZE][JDIM], int ind_ker, int idim, int jdim)
 {
-    for (int j = 0; j < JDIM; j++) {
+    /* Zone valide */
+    for (int j = 0; j <= jdim - KERNEL_SIZE; j++) {
         uint32_t acc = 0;
 
         for (int k = 0; k < KERNEL_SIZE; k++) {
@@ -192,127 +134,135 @@ static void gaussian15_vertical_from_rows_8bits(
             acc += gauss15[idx] * rows[k][j];
         }
 
-        out_line[j] = (uint8_t)(acc >> 16); // Q16.16 → 8 bits
+        out_line[j] = (uint8_t)(acc >> 16); // Q16.16 → Q8.0
+    }
+
+    /* Partie droite forcée à 0 */
+    for (int j = jdim - KERNEL_SIZE + 1; j < jdim; j++) {
+        out_line[j] = 0;
     }
 }
 
-void gaussian_blur_15x15_stream_8bits(uint8_t *out, const uint8_t *in)
+static void gaussian15_horizontal_line_8bits_opti(uint16_t *out, const uint8_t *in_line, int jdim)
 {
-    // Remplissage initial : clamp vertical
-for (int k = 0; k < KERNEL_SIZE; k++) {
-    int src_i = k - KERNEL_RADIUS;
-    if (src_i < 0) src_i = 0;
-    if (src_i >= IDIM) src_i = IDIM - 1;
-
-    gaussian15_horizontal_line_8bits(
-        row_buf[k],
-        &in[src_i * JDIM]
-    );
-}
-    gaussian15_vertical_from_rows_8bits(
-        &out[0],
-        row_buf,
-        0
-    );
-
-    /* Boucle principale */
-    int ind_ker = KERNEL_RADIUS;
-
-for (int i = 0; i < IDIM; i++) {
-
-    gaussian15_vertical_from_rows_8bits(
-        &out[i * JDIM],
-        row_buf,
-        ind_ker
-    );
-
-    // Préparer la prochaine ligne
-    int next_i = i + KERNEL_RADIUS + 1;
-    if (next_i >= IDIM) next_i = IDIM - 1;
-
-    ind_ker = (ind_ker + 1) % KERNEL_SIZE;
-
-    gaussian15_horizontal_line_8bits(
-        row_buf[ind_ker],
-        &in[next_i * JDIM]
-    );
-}
-
-    /* Bords bas */
-    for (int i = IDIM - KERNEL_RADIUS; i < IDIM; i++) {
-        gaussian15_vertical_from_rows_8bits(
-            &out[i * JDIM],
-            row_buf,
-            ind_ker
-        );
-    }
-}
-
-
-static void gaussian_horizontal_line_16bits(uint16_t *out, const uint8_t *in_line)
-{
-    for (int j = 0; j < JDIM; j++) {
+    for (int j = 0; j <= jdim - KERNEL_SIZE; j++) {
         uint32_t acc = 0;
+        /*
+        acc +=  4 * in_line[j +  0];
+        acc += 16 * in_line[j +  2];
+        acc += 36 * in_line[j +  4];
+        acc += 47 * in_line[j +  6];
+        acc += 50 * in_line[j +  7];
+        acc += 47 * in_line[j +  8];
+        acc += 36 * in_line[j + 10];
+        acc += 16 * in_line[j + 12];
+        acc +=  4 * in_line[j + 14];
+        */
+        acc +=  2 * in_line[j +  0];
+        acc +=  4 * in_line[j +  1];
+        acc +=  8 * in_line[j +  2];
+        acc += 13 * in_line[j +  3];
+        acc += 21 * in_line[j +  4];
+        acc += 28 * in_line[j +  5];
+        acc += 34 * in_line[j +  6];
+        acc += 36 * in_line[j +  7];
+        acc += 34 * in_line[j +  8];
+        acc += 28 * in_line[j +  9];
+        acc += 21 * in_line[j + 10];
+        acc += 13 * in_line[j + 11];
+        acc +=  8 * in_line[j + 12];
+        acc +=  4 * in_line[j + 13];
+        acc +=  2 * in_line[j + 14];
 
-        for (int k = -KERNEL_RADIUS_9; k <= KERNEL_RADIUS_9; k++) {
-            int jj = j + k;
-            if (jj < 0) jj = 0;
-            else if (jj >= JDIM) jj = JDIM - 1;
-
-            acc += gauss9[k + KERNEL_RADIUS_9] * in_line[jj];
-        }
         out[j] = (uint16_t)acc;
     }
 }
 
-static void gaussian_vertical_from_rows_16bits(uint16_t *out_line, uint16_t rows[KERNEL_SIZE_9][JDIM])
+static void gaussian15_vertical_from_rows_8bits_opti(uint8_t *out_line, uint16_t rows[KERNEL_SIZE][JDIM], int ind_ker, int idim, int jdim)
 {
-    for (int j = 0; j < JDIM; j++) {
+    /*
+    int k0  = ( 0 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
+    int k2  = ( 2 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
+    int k4  = ( 4 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
+    int k6  = ( 6 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
+    int k7  = ( 7 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
+    int k8  = ( 8 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
+    int k10 = (10 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
+    int k12 = (12 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
+    int k14 = (14 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
+    */
+    for (int j = 0; j <= jdim - KERNEL_SIZE; j++) {
         uint32_t acc = 0;
+        /*
+        acc +=  4 * rows[k0 ][j];
+        acc += 16 * rows[k2 ][j];
+        acc += 36 * rows[k4 ][j];
+        acc += 47 * rows[k6 ][j];
+        acc += 50 * rows[k7 ][j];
+        acc += 47 * rows[k8 ][j];
+        acc += 36 * rows[k10][j];
+        acc += 16 * rows[k12][j];
+        acc +=  4 * rows[k14][j];
+        */
+        acc +=  2 * rows[( ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  4 * rows[( 1 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  8 * rows[( 2 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  13 * rows[( 3 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  21 * rows[( 4 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  28 * rows[( 5 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  34 * rows[( 6 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  36 * rows[( 7 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  34 * rows[( 8 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  28 * rows[( 9 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  21 * rows[( 10 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  13 * rows[( 11 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  8 * rows[( 12 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  4 * rows[( 13 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
+        acc +=  2 * rows[( 14 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
 
-        for (int k = 0; k < KERNEL_SIZE_9; k++) {
-            acc += gauss9[k] * rows[k][j];
-        }
-        // Normalisation totale : 256 (pour appliquer un facteur 256 sur les niveaux de gris de l'image convoluée par raport à l'image d'entrée)
-        out_line[j] = acc >> GAUSS_SHIFT;
+        out_line[j] = (uint8_t)(acc >> 16);
+    }
+
+    for (int j = jdim - KERNEL_SIZE + 1; j < jdim; j++) {
+        out_line[j] = 0;
     }
 }
 
-void gaussian_blur_9x9_stream_16bits(uint16_t *out, const uint8_t *in)
+void gaussian_blur_15x15_stream_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim)
 {
-    // Pré-remplissage (bords haut)
-    for (int i = 0; i < KERNEL_RADIUS_9; i++) {
-        gaussian_horizontal_line_16bits(row_buf[i], &in[0]);
+    /* Préchargement exact des KERNEL_SIZE premières lignes */
+    for (int k = 0; k < KERNEL_SIZE; k++) {
+        #if GAUSSIAN_OPTI
+            gaussian15_horizontal_line_8bits_opti(row_buf[k], &in[k * jdim], jdim);
+        #else
+            gaussian15_horizontal_line_8bits(row_buf[k], &in[k * jdim], jdim);
+        #endif
     }
 
-    int buf_idx = KERNEL_RADIUS_9;
+    int ind_ker = 0;
 
-    for (int i = 0; i < IDIM; i++) {
-
-        int src_i = i + KERNEL_RADIUS_9;
-        if (src_i >= IDIM) src_i = IDIM - 1;
-
-        gaussian_horizontal_line_16bits(
-            row_buf[buf_idx],
-            &in[src_i * JDIM]
-        );
-
-        if (i >= KERNEL_RADIUS_9) {
-            gaussian_vertical_from_rows_16bits(
-                &out[(i - KERNEL_RADIUS_9) * JDIM],
-                row_buf
-            );
+    /* Boucle principale — uniquement zone valide */
+    for (int i = 0; i <= idim - KERNEL_SIZE; i++) {
+        #if GAUSSIAN_OPTI
+            gaussian15_vertical_from_rows_8bits_opti(&out[i * jdim], row_buf, ind_ker, idim, jdim);
+        #else
+            gaussian15_vertical_from_rows_8bits(&out[i * jdim], row_buf, ind_ker, idim, jdim);
+        #endif
+        /* Charger la prochaine ligne exacte */
+        if (i + KERNEL_SIZE < idim) {
+            #if GAUSSIAN_OPTI
+                gaussian15_horizontal_line_8bits_opti(row_buf[ind_ker],  &in[(i + KERNEL_SIZE) * jdim], jdim);
+            #else
+                gaussian15_horizontal_line_8bits(row_buf[ind_ker],  &in[(i + KERNEL_SIZE) * jdim], jdim);
+            #endif
         }
 
-        buf_idx = (buf_idx + 1) % KERNEL_SIZE_9;
+        ind_ker = (ind_ker + 1) % KERNEL_SIZE;
     }
-
-    // Bords bas
-    for (int i = IDIM - KERNEL_RADIUS_9; i < IDIM; i++) {
-        gaussian_vertical_from_rows_16bits(
-            &out[i * JDIM],
-            row_buf
-        );
+    for (int i = idim - KERNEL_SIZE + 1; i < idim; i++) {
+        for (int j = 0; j < jdim; j++) {
+            out[i * jdim + j] = 0;
+        }
     }
 }
 
@@ -321,7 +271,7 @@ static inline uint8_t abs8(int x)
     return (x < 0) ? -x : x;
 }
 
-void norme_gradient_L1_8bits(uint8_t *out, const uint8_t *in)
+void norme_gradient_L1_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim)
 {
     for (int i = 0; i < IDIM; i++) {
 
@@ -361,19 +311,15 @@ static inline void draw_cross_3x3(
     img[(y + 1) * JDIM + x] = 255;
 }
 
-uint16_t gradient_max_blocks_16x16(
-    uint8_t *im_grad,
-    uint8_t *im_gauss, 
-    uint32_t *points_ref
-)
+uint16_t extract_points(uint8_t *im_grad, uint8_t *im_gauss, uint32_t *points_ref)
 {
     uint16_t n_points = 0;
     uint8_t pix_val;
     uint8_t grad_MSB;
     uint32_t word;
 
-    for (int by = 0; by < IDIM; by += BLOCK_SIZE) {
-        for (int bx = 0; bx < JDIM; bx += BLOCK_SIZE) {
+    for (int by = 0; by < IDIM-EDGE_SIZE; by += BLOCK_SIZE) {
+        for (int bx = 0; bx < JDIM-EDGE_SIZE; bx += BLOCK_SIZE) {
 
             uint8_t max_val = 0;
             int max_x = bx;
@@ -416,6 +362,28 @@ uint16_t gradient_max_blocks_16x16(
     }
     return n_points;
 }
+
+uint16_t extract_points_red(uint8_t *im_gauss, uint32_t *points_ref)
+{
+    uint16_t n_points = 0;
+    uint8_t pix_val;
+    uint32_t word;
+
+    for (int by = 0; by <= IDIM_R-EDGE_SIZE; by += 2) {
+        for (int bx = 0; bx <= JDIM_R-EDGE_SIZE; bx += 2) {
+            /* Encodage dans 32 bits : x:9 + y:9 + pixel:8 + gradMSB:6 */
+            pix_val = im_gauss[by * JDIM_R + bx];
+
+            word = ((by & 0x1FF) << 23)
+                          | ((bx & 0x1FF) << 14)
+                          | ((pix_val & 0xFF) << 6)
+                          | (0 & 0x3F);
+            points_ref[n_points++] = word;
+        }
+    }
+    return n_points;
+}
+
 void mark_points(uint8_t *im, uint32_t *points_ref, uint16_t nb_points){
     int32_t y;
     int32_t x;
@@ -439,6 +407,29 @@ void copy_image(uint8_t *out, const uint8_t *in, uint32_t n_pixels)
     {
         out[i] = in[i];
     }
+}
+
+void red_image(uint8_t *out, const uint8_t *in)
+{
+  // Parcours des blocs 8×8
+  for (int by = 0; by < IDIM_R; by++) {
+    for (int bx = 0; bx < JDIM_R; bx++) {
+
+      int sum = 0;
+
+      // Moyenne du bloc 8×8
+      for (int dy = 0; dy < FACT_R; dy++) {
+        for (int dx = 0; dx < FACT_R; dx++) {
+          int x = bx * FACT_R + dx;
+          int y = by * FACT_R + dy;
+          sum += in[y * JDIM + x];
+        }
+      }
+
+      int avg = sum >> R_SHIFT; 
+      out[by * JDIM_R + bx] = avg;
+    }
+  }
 }
 
 // --- I/O / debug ---
@@ -498,32 +489,6 @@ void send_im_16bits_8bits(uint16_t *img)
     Serial.write(checksum);
 }
 
-void image_ascii(uint8_t *img)
-{
-  // Parcours des blocs 8×8
-  for (int by = 0; by < OUT_H; by++) {
-    for (int bx = 0; bx < OUT_W; bx++) {
-
-      int sum = 0;
-
-      // Moyenne du bloc 8×8
-      for (int dy = 0; dy < BLOCK_H; dy++) {
-        for (int dx = 0; dx < BLOCK_W; dx++) {
-          int x = bx * BLOCK_W + dx;
-          int y = by * BLOCK_H + dy;
-          sum += img[y * 320 + x];
-        }
-      }
-
-      int avg = sum / (BLOCK_W * BLOCK_H); // valeur 0-255
-
-      // mapping vers caractères
-      int idx = (avg * (ASCII_LEN - 1)) / 255;
-      Serial.print(ASCII_RAMP[idx]);
-    }
-    Serial.println();
-  }
-}
 
 void send_point(const uint32_t *points, uint16_t max_points)
 {
@@ -560,8 +525,9 @@ void send_point(const uint32_t *points, uint16_t max_points)
     Serial.write(checksum);
 }
 
-void send_motion_data(uint8_t *img, uint16_t img_width, uint16_t img_height,
-                      uint32_t *points, uint16_t max_points)
+void send_motion_data(uint8_t *img, uint16_t img_width, uint16_t img_height, 
+                    uint8_t *img_r, uint16_t img_width_r, uint16_t img_height_r, 
+                    uint32_t *points, uint16_t max_points, uint32_t *points_r, uint16_t max_points_r, uint32_t cam_param)
 {
     uint8_t checksum = 0;
     uint32_t img_size = img_width * img_height;
@@ -584,7 +550,18 @@ void send_motion_data(uint8_t *img, uint16_t img_width, uint16_t img_height,
         Serial.write(v);
         checksum ^= v;
     }
-
+    // --- Image Réduite ---
+    Serial.write((uint8_t)(img_width_r & 0xFF));
+    Serial.write((uint8_t)(img_width_r >> 8));
+    Serial.write((uint8_t)(img_height_r & 0xFF));
+    Serial.write((uint8_t)(img_height_r >> 8));
+    Serial.write(IMG_FORMAT);
+    img_size = img_width_r * img_height_r;
+    for (uint32_t i = 0; i < img_size; i++) {
+        uint8_t v = img_r[i];
+        Serial.write(v);
+        checksum ^= v;
+    }
     // --- Points ---
     Serial.write((uint8_t)(max_points & 0xFF));
     Serial.write((uint8_t)(max_points >> 8));
@@ -602,15 +579,46 @@ void send_motion_data(uint8_t *img, uint16_t img_width, uint16_t img_height,
         Serial.write(b2); checksum ^= b2;
         Serial.write(b3); checksum ^= b3;
     }
+    // --- Points Réduit ---
+    Serial.write((uint8_t)(max_points_r & 0xFF));
+    Serial.write((uint8_t)(max_points_r >> 8));
+    Serial.write(POINT_FORMAT);
+
+    for (uint16_t i = 0; i < max_points_r; i++) {
+        uint32_t p = points_r[i];
+        uint8_t b0 = (uint8_t)(p & 0xFF);
+        uint8_t b1 = (uint8_t)((p >> 8) & 0xFF);
+        uint8_t b2 = (uint8_t)((p >> 16) & 0xFF);
+        uint8_t b3 = (uint8_t)((p >> 24) & 0xFF);
+
+        Serial.write(b0); checksum ^= b0;
+        Serial.write(b1); checksum ^= b1;
+        Serial.write(b2); checksum ^= b2;
+        Serial.write(b3); checksum ^= b3;
+    }
 
     // --- Méta-données 256 octets ---
     Serial.write(META_FORMAT);
-    for (uint16_t i = 0; i < 64; i++) { // 64 mots de 32 bits = 256 octets
-        uint32_t m = 0;
-        uint8_t b0 = (uint8_t)(m & 0xFF);
-        uint8_t b1 = (uint8_t)((m >> 8) & 0xFF);
-        uint8_t b2 = (uint8_t)((m >> 16) & 0xFF);
-        uint8_t b3 = (uint8_t)((m >> 24) & 0xFF);
+    uint8_t b0 = 0;
+    uint8_t b1 = 0;
+    uint8_t b2 = 0;
+    uint8_t b3 = 0;
+    b0 = (uint8_t)(cam_param & 0xFF);
+    b1 = (uint8_t)((cam_param >> 8) & 0xFF);
+    b2 = (uint8_t)((cam_param >> 16) & 0xFF);
+    b3 = (uint8_t)((cam_param >> 24) & 0xFF);
+
+    Serial.write(b0); checksum ^= b0;
+    Serial.write(b1); checksum ^= b1;
+    Serial.write(b2); checksum ^= b2;
+    Serial.write(b3); checksum ^= b3;
+
+    // complète les 63 mots restants avec des 0
+    for (uint16_t i = 1; i < 64; i++) { // 64 mots de 32 bits = 256 octets
+        b0 = 0;
+        b1 = 0;
+        b2 = 0;
+        b3 = 0;
 
         Serial.write(b0); checksum ^= b0;
         Serial.write(b1); checksum ^= b1;

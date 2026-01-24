@@ -23,6 +23,7 @@
 
 #define EDGE_SIZE 16
 #define BLOCK_SIZE 16
+#define EDGE_SIZE_R 8
 #define BLOCK_SIZE_R 4
 
 #define Q16_SHIFT   16
@@ -69,7 +70,7 @@ void hist_cum(uint32_t *histo, uint8_t *img){
   }
 }
 
-int32_t read_bilineaire(const uint8_t* image, int32_t x_q, int32_t y_q, int idim, int jdim)
+/*int32_t read_bilineaire(uint8_t* image, int32_t x_q, int32_t y_q, int idim, int jdim)
 {
     // Partie entière
     int32_t x0 = x_q >> Q16_SHIFT;
@@ -90,22 +91,65 @@ int32_t read_bilineaire(const uint8_t* image, int32_t x_q, int32_t y_q, int idim
     int32_t fy1 = Q16_ONE - fy;
 
     // Accès pixels (8 bits)
+    int32_t I00 = (int32_t) image[y0 * jdim + x0];
+    int32_t I10 = (int32_t) image[y0 * jdim + (x0 + 1)];
+    int32_t I01 = (int32_t) image[(y0 + 1) * jdim + x0];
+    int32_t I11 = (int32_t) image[(y0 + 1) * jdim + (x0 + 1)];
+
+    // Interpolation bilinéaire factorisée
+    // Étape X
+    int32_t i0 = (I00 * fx1 + I10 * fx)>>8;  // Q16.8 
+    int32_t i1 = (I01 * fx1 + I11 * fx)>>8;  // Q16.8
+
+    // Étape Y
+    int32_t i  = i0 * fy1 + i1 * fy;    // Q8.24 → implicitement
+
+    // Normalisation finale vers Q16.16
+    return (int32_t) (i >> 8);
+}*/
+
+int32_t read_bilineaire(
+    uint8_t* image,
+    int32_t x_q,
+    int32_t y_q,
+    int idim,
+    int jdim
+)
+{
+    // Partie entière
+    int32_t x0 = x_q >> Q16_SHIFT;
+    int32_t y0 = y_q >> Q16_SHIFT;
+
+    if (x0 < 0 || x0 >= jdim - 1 ||
+        y0 < 0 || y0 >= idim - 1)
+    {
+        return 0;
+    }
+
+    // Fractionnaires ramenés en Q0.8
+    int32_t fx  = (x_q >> 8) & 0xFF;   // Q0.8
+    int32_t fy  = (y_q >> 8) & 0xFF;   // Q0.8
+    int32_t fx1 = 256 - fx; // Q0.8
+    int32_t fy1 = 256 - fy; // Q0.8
+
+    // Pixels (Q8.0)
     int32_t I00 = image[y0 * jdim + x0];
     int32_t I10 = image[y0 * jdim + (x0 + 1)];
     int32_t I01 = image[(y0 + 1) * jdim + x0];
     int32_t I11 = image[(y0 + 1) * jdim + (x0 + 1)];
 
-    // Interpolation bilinéaire factorisée
-    // Étape X
-    int32_t i0 = I00 * fx1 + I10 * fx;  // Q16.16
-    int32_t i1 = I01 * fx1 + I11 * fx;  // Q16.16
+    // Interpolation X (Q8.0 × Q0.8 → Q8.8)
+    int32_t i0 = I00 * fx1 + I10 * fx; // Q8.8
+    int32_t i1 = I01 * fx1 + I11 * fx; // Q8.8
 
-    // Étape Y
-    int32_t i  = i0 * fy1 + i1 * fy;    // Q32.32 → implicitement
+    // Interpolation Y (Q8.8 × Q8.8 → Q16.16)
+    int32_t acc = i0 * fy1 + i1 * fy;  // Q16.16
 
-    // Normalisation finale vers Q16.16
-    return i >> Q16_SHIFT;
+    // Normalisation finale → Q16.16
+    return acc;
 }
+
+
 
 static void gaussian15_horizontal_line_8bits(uint16_t *out, const uint8_t *in_line, int jdim)
 {
@@ -147,17 +191,6 @@ static void gaussian15_horizontal_line_8bits_opti(uint16_t *out, const uint8_t *
 {
     for (int j = 0; j <= jdim - KERNEL_SIZE; j++) {
         uint32_t acc = 0;
-        /*
-        acc +=  4 * in_line[j +  0];
-        acc += 16 * in_line[j +  2];
-        acc += 36 * in_line[j +  4];
-        acc += 47 * in_line[j +  6];
-        acc += 50 * in_line[j +  7];
-        acc += 47 * in_line[j +  8];
-        acc += 36 * in_line[j + 10];
-        acc += 16 * in_line[j + 12];
-        acc +=  4 * in_line[j + 14];
-        */
         acc +=  2 * in_line[j +  0];
         acc +=  4 * in_line[j +  1];
         acc +=  8 * in_line[j +  2];
@@ -180,30 +213,8 @@ static void gaussian15_horizontal_line_8bits_opti(uint16_t *out, const uint8_t *
 
 static void gaussian15_vertical_from_rows_8bits_opti(uint8_t *out_line, uint16_t rows[KERNEL_SIZE][JDIM], int ind_ker, int idim, int jdim)
 {
-    /*
-    int k0  = ( 0 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
-    int k2  = ( 2 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
-    int k4  = ( 4 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
-    int k6  = ( 6 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
-    int k7  = ( 7 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
-    int k8  = ( 8 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
-    int k10 = (10 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
-    int k12 = (12 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
-    int k14 = (14 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE;
-    */
     for (int j = 0; j <= jdim - KERNEL_SIZE; j++) {
         uint32_t acc = 0;
-        /*
-        acc +=  4 * rows[k0 ][j];
-        acc += 16 * rows[k2 ][j];
-        acc += 36 * rows[k4 ][j];
-        acc += 47 * rows[k6 ][j];
-        acc += 50 * rows[k7 ][j];
-        acc += 47 * rows[k8 ][j];
-        acc += 36 * rows[k10][j];
-        acc += 16 * rows[k12][j];
-        acc +=  4 * rows[k14][j];
-        */
         acc +=  2 * rows[( ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
         acc +=  4 * rows[( 1 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
         acc +=  8 * rows[( 2 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
@@ -260,6 +271,68 @@ void gaussian_blur_15x15_stream_8bits(uint8_t *out, const uint8_t *in, int idim,
         ind_ker = (ind_ker + 1) % KERNEL_SIZE;
     }
     for (int i = idim - KERNEL_SIZE + 1; i < idim; i++) {
+        for (int j = 0; j < jdim; j++) {
+            out[i * jdim + j] = 0;
+        }
+    }
+}
+
+static void gaussian7_horizontal_line_8bits_opti(uint16_t *out, const uint8_t *in_line, int jdim)
+{
+    for (int j = 0; j <= jdim - 7; j++) {
+        uint32_t acc = 0;
+        acc +=  8 * in_line[j +  0];
+        acc += 27 * in_line[j +  1];
+        acc += 57 * in_line[j +  2];
+        acc += 72 * in_line[j +  3];
+        acc += 57 * in_line[j +  4];
+        acc += 27 * in_line[j +  5];
+        acc +=  8 * in_line[j +  6];
+
+        out[j] = (uint16_t)acc;
+    }
+}
+
+static void gaussian7_vertical_from_rows_8bits_opti(uint8_t *out_line, uint16_t rows[KERNEL_SIZE][JDIM], int ind_ker, int idim, int jdim)
+{
+    for (int j = 0; j <= jdim - 7; j++) {
+        uint32_t acc = 0;
+        acc +=   8 * rows[( ind_ker + 7) % 7 ][j];
+        acc += 27 * rows[( 1 + ind_ker + 7) % 7 ][j];
+        acc += 57 * rows[( 2 + ind_ker + 7) % 7 ][j];
+        acc += 72 * rows[( 3 + ind_ker + 7) % 7 ][j];
+        acc += 57 * rows[( 4 + ind_ker + 7) % 7 ][j];
+        acc += 27 * rows[( 5 + ind_ker + 7) % 7 ][j];
+        acc +=  8 * rows[( 6 + ind_ker + 7) % 7 ][j];
+
+        out_line[j] = (uint8_t)(acc >> 16);
+    }
+
+    for (int j = jdim - 7 + 1; j < jdim; j++) {
+        out_line[j] = 0;
+    }
+}
+
+void gaussian_blur_7x7_stream_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim)
+{
+    /* Préchargement exact des 7 premières lignes */
+    for (int k = 0; k < 7; k++) {
+        gaussian7_horizontal_line_8bits_opti(row_buf[k], &in[k * jdim], jdim);
+    }
+
+    int ind_ker = 0;
+
+    /* Boucle principale — uniquement zone valide */
+    for (int i = 0; i <= idim - 7; i++) {
+        gaussian7_vertical_from_rows_8bits_opti(&out[i * jdim], row_buf, ind_ker, idim, jdim);
+        /* Charger la prochaine ligne exacte */
+        if (i + 7 < idim) {
+            gaussian7_horizontal_line_8bits_opti(row_buf[ind_ker],  &in[(i + 7) * jdim], jdim);
+        }
+
+        ind_ker = (ind_ker + 1) % 7;
+    }
+    for (int i = idim - 7 + 1; i < idim; i++) {
         for (int j = 0; j < jdim; j++) {
             out[i * jdim + j] = 0;
         }
@@ -344,8 +417,11 @@ uint16_t extract_points(uint8_t *im_grad, uint8_t *im_gauss, uint32_t *points_re
             }
             /* Encodage dans 32 bits : x:9 + y:9 + pixel:8 + gradMSB:6 */
             pix_val = im_gauss[max_y * JDIM + max_x];
-            grad_MSB = max_val >> 2;  // 6 MSB
-
+            grad_MSB = max_val; // >> 2;  // 6 LSB car gradient sur filtre 15*15 < 64
+            if(grad_MSB>63)
+            {
+                grad_MSB = 63;
+            }
             word = ((max_y & 0x1FF) << 23)
                           | ((max_x & 0x1FF) << 14)
                           | ((pix_val & 0xFF) << 6)
@@ -369,8 +445,8 @@ uint16_t extract_points_red(uint8_t *im_gauss, uint32_t *points_ref)
     uint8_t pix_val;
     uint32_t word;
 
-    for (int by = 0; by <= IDIM_R-EDGE_SIZE; by += 2) {
-        for (int bx = 0; bx <= JDIM_R-EDGE_SIZE; bx += 2) {
+    for (int by = 0; by <= IDIM_R-EDGE_SIZE_R; by += 2) {
+        for (int bx = 0; bx <= JDIM_R-EDGE_SIZE_R; bx += 2) {
             /* Encodage dans 32 bits : x:9 + y:9 + pixel:8 + gradMSB:6 */
             pix_val = im_gauss[by * JDIM_R + bx];
 

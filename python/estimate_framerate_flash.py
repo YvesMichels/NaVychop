@@ -1,3 +1,4 @@
+ 
 import cv2
 import numpy as np
 import time
@@ -38,6 +39,9 @@ print("===== Demarrage =====")
 # ---------------------------
 # Acquisition temporelle
 # ---------------------------
+
+# attend une touche (Entrée)
+input("Appuyez sur une touche pour continuer...")
 t_start = time.time()
 
 while True:

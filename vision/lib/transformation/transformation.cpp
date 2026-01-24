@@ -6,6 +6,7 @@
 
 #include <Arduino.h>
 #include "transformation.h"
+#include "image_process.h"
 
 /*
 bits 31 ............... 23 | 22 ............... 14 | 13 .............. 6 | 5 .............. 0
@@ -27,7 +28,7 @@ bits 31 ............... 23 | 22 ............... 14 | 13 .............. 6 | 5 ...
 #define SIN_LUT_SIZE 128
 
 // LUT 129 valeurs en Q1.15
-static const int16_t sin_lut[SIN_LUT_SIZE + 1] = {
+static int16_t sin_lut[SIN_LUT_SIZE + 1] = {
         0,    402,    804,   1206,   1608,   2009,   2410,   2811,
      3212,   3612,   4011,   4410,   4808,   5205,   5602,   5998,
      6393,   6786,   7179,   7571,   7962,   8351,   8739,   9126,
@@ -92,7 +93,30 @@ int32_t q16_cos(int32_t theta) {
     return q16_sin(HALF_PI_Q16 - theta);
 }
 
+static inline int32_t q16_sqrt(int32_t x)
+{
+    if (x <= 0)
+        return 0;
 
+    // Estimation initiale : sqrt(x) ≈ x si x < 1, sinon 1
+    int32_t y = (x < Q16_ONE) ? Q16_ONE : x;
+
+    // Newton-Raphson : y = 0.5 * (y + x / y)
+    for (int i = 0; i < 4; i++)
+    {
+        y = (y + (int32_t)(((int64_t)x << Q16_SHIFT) / y)) >> 1;
+    }
+
+    return y;
+}
+
+static inline int32_t q16_div(int32_t a, int32_t b)
+{
+    if (b == 0)
+        return 0;
+
+    return (int32_t)(((int64_t)a << Q16_SHIFT) / b);
+}
 
 uint32_t transform_point(
     uint32_t p,
@@ -163,12 +187,131 @@ void transform_points(
     }
 }
 
+uint32_t huber_cost_q16(
+    uint32_t *points_ref,
+    uint16_t nb_points,
+    uint8_t *img_cur,
+    uint16_t jdim,
+    uint16_t idim,
+    transform_param_q16_t *p,
+    int32_t huber_delta_q16
+) {
+    int32_t c = q16_cos(p->theta);
+    int32_t s = q16_sin(p->theta);
+    int32_t scale = Q16_ONE + p->div;
+
+    uint64_t cost = 0;
+    uint32_t n = 0;
+    int32_t sq_huber_delta_q16 = q16_mul(huber_delta_q16, huber_delta_q16);
+
+    for (uint16_t i_pts = 0; i_pts < nb_points; i_pts+=2) {
+        uint32_t wpt = points_ref[i_pts];
+
+        int32_t y = (wpt >> Y_SHIFT) & COORD_MASK;
+        int32_t x = (wpt >> X_SHIFT) & COORD_MASK;
+        int32_t pix_ref = (wpt >> PIX_SHIFT) & PIX_MASK;
+
+        int32_t x_q = x << Q16_SHIFT;
+        int32_t y_q = y << Q16_SHIFT;
+
+        int32_t dx = x_q - p->vp_x;
+        int32_t dy = y_q - p->vp_y;
+
+        dx = q16_mul(dx, scale);
+        dy = q16_mul(dy, scale);
+
+        int32_t dxr = q16_mul(dx, c) - q16_mul(dy, s);
+        int32_t dyr = q16_mul(dx, s) + q16_mul(dy, c);
+
+        int32_t xw = p->vp_x + dxr + p->tx;
+        int32_t yw = p->vp_y + dyr + p->ty;
+        //int32_t xw = x_q + p->tx;
+        //int32_t yw = y_q + p->ty;
+
+        int32_t xi = xw >> Q16_SHIFT; 
+        int32_t yi = yw >> Q16_SHIFT;
+
+        if (xi >= 0 && xi <= jdim-8 && yi >= 0 && yi <= idim-8){ // 8 pour les images réduites en prenant en compte l'interpolation
+
+            int32_t Ic =  read_bilineaire(img_cur, xw, yw, idim, jdim);
+            int32_t e = Ic - (pix_ref << Q16_SHIFT);
+            int32_t ae = e >= 0 ? e : -e;
+
+            if (ae < huber_delta_q16){
+                ae = q16_mul(ae, ae);
+            }
+            else{
+                ae = q16_mul(huber_delta_q16<<1, ae)-sq_huber_delta_q16;
+            }
+
+            cost += ae;
+            n++;
+        }
+    }
+
+    if (n == 0) return UINT32_MAX;
+    return (uint32_t)(cost / n);
+}
+
+uint32_t exhaustive_init(
+    uint32_t *points_ref,
+    uint16_t nb_points,
+    uint8_t *img_cur,
+    transform_param_q16_t *p_init,
+    int32_t huber_delta_q16
+) {
+    int32_t theta_vals[5] = {
+        (int32_t)(-6554),
+        (int32_t)(-3277),
+        (int32_t) 0,
+        (int32_t)(3277),
+        (int32_t)(6554)
+    };
+
+    uint32_t best_cost = UINT32_MAX;
+
+    for (uint8_t k = 0; k < 5; k++) {
+        for (int32_t ty = -3; ty <= 3; ty++) {
+            for (int32_t tx = -3; tx <= 3; tx++) {
+
+                transform_param_q16_t p_test = {
+                    .div   = 0,
+                    .theta = theta_vals[k],
+                    .tx    = tx << Q16_SHIFT,
+                    .ty    = ty << Q16_SHIFT,
+                    .vp_x  = p_init->vp_x,
+                    .vp_y  = p_init->vp_y
+                };
+
+                uint32_t c = huber_cost_q16(
+                    points_ref,
+                    nb_points,
+                    img_cur,
+                    40, 30,
+                    &p_test,
+                    huber_delta_q16
+                );
+
+                if (c < best_cost) {
+                    best_cost = c;
+                    p_init->div = p_test.div;
+                    p_init->theta = p_test.theta;
+                    p_init->tx = p_test.tx;
+                    p_init->ty = p_test.ty;
+                }
+            }
+        }
+    }
+
+    return best_cost;
+}
+
 void huber_gradient_q16(
-    const uint32_t *points_ref,
+    uint32_t *points_ref,
     int nb_points,
-    const uint8_t *img_cur,
+    uint8_t *img_cur,
     int width, int height,
-    const transform_param_q16_t *p,
+    transform_param_q16_t *p,
     int32_t huber_delta_q16,
     transform_grad_q16_t *g_out
 )
@@ -192,8 +335,8 @@ void huber_gradient_q16(
         int32_t pix_ref = (w >> PIX_SHIFT) & PIX_MASK;
         /* HF_im disponible mais non utilisé */
 
-        if (x <= 0 || x >= width - 1 ||
-            y <= 0 || y >= height - 1)
+        if (x <= 0 || x >= width - 15 ||
+            y <= 0 || y >= height - 15)
             continue;
 
         /* ---- coordonnées Q16 ---- */
@@ -215,8 +358,8 @@ void huber_gradient_q16(
         int xi = xw >> Q16_SHIFT;
         int yi = yw >> Q16_SHIFT;
 
-        if (xi <= 0 || xi >= width - 1 ||
-            yi <= 0 || yi >= height - 1)
+        if (xi <= 0 || xi >= width - 15 ||
+            yi <= 0 || yi >= height - 15)
             continue;
 
         /* ---- erreur photométrique ---- */

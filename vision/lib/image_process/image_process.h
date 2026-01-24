@@ -9,8 +9,9 @@
 #include <stdint.h>
 // --- Calcul traitement d'images ---
 void hist_cum(uint32_t *histo, uint8_t *img);
-int32_t read_bilineaire(const uint8_t* image, int32_t x_q, int32_t y_q, int idim, int jdim);
+int32_t read_bilineaire(uint8_t* image, int32_t x_q, int32_t y_q, int idim, int jdim);
 void gaussian_blur_15x15_stream_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim);
+void gaussian_blur_7x7_stream_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim);
 void norme_gradient_L1_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim);
 uint16_t extract_points(uint8_t *im_grad, uint8_t *im_gauss, uint32_t *points_ref);
 uint16_t extract_points_red(uint8_t *im_gauss, uint32_t *points_ref);

@@ -37,6 +37,18 @@ class Grad4Q16:
         self.ty = 0
         
         
+def pack_q16(x, y):
+    return ((y << 16) << 32) | (x << 16)
+
+def unpack_q16(wpt):
+    x_q16 =  wpt & 0xFFFFFFFF
+    y_q16 = (wpt >> 32) & 0xFFFFFFFF
+
+    x = x_q16 >> 16
+    y = y_q16 >> 16
+    return x, y
+
+
 def q16_mul(a, b):
     return (a * b) >> Q16_SHIFT
 
@@ -48,6 +60,26 @@ def q16_sin(theta_q16):
 def q16_cos(theta_q16):
     theta = theta_q16 / Q16_ONE
     return int(math.cos(theta) * Q16_ONE)
+
+
+def rot_x(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[1, 0, 0],
+                     [0, c, -s],
+                     [0, s,  c]])
+
+def rot_y(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[ c, 0, s],
+                     [ 0, 1, 0],
+                     [-s, 0, c]])
+
+def rot_z(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[c, -s, 0],
+                     [s,  c, 0],
+                     [0,  0, 1]])
+
 
 def load_image_u8(path):
     img = Image.open(path).convert('L')
@@ -107,7 +139,112 @@ def read_bilineaire(image, x_q, y_q):
 
     return i >> Q16_SHIFT        # Q16.16
 
+def tranform_point_q16(x, y, p):
+    
+    x_s = []
+    y_s = []
+    c = q16_cos(p.theta)
+    s = q16_sin(p.theta)
+    scale = Q16_ONE + p.div
 
+    for i in range(len(x)):
+
+        x_q = x[i]
+        y_q = y[i]
+
+        dx = x_q - p.vp_x
+        dy = y_q - p.vp_y
+
+        dxp = q16_mul(dx, scale)
+        dyp = q16_mul(dy, scale)
+
+        dxr = q16_mul(dxp, c) - q16_mul(dyp, s)
+        dyr = q16_mul(dxp, s) + q16_mul(dyp, c)
+
+        xw = p.vp_x + dxr + p.tx
+        yw = p.vp_y + dyr + p.ty
+        x_s.append(xw)
+        y_s.append(yw)
+        
+    return x_s, y_s
+
+def integrate_camera_motion(
+    p_list,
+    ifov_rad_per_pix,
+    Z_ref,
+    show=True
+):
+    """
+    p_list : liste de TransformParamQ16 successifs
+    ifov_rad_per_pix : IFOV caméra (rad / pixel)
+    Z_ref : profondeur effective moyenne (m ou unité arbitraire)
+    """
+
+    # --- État initial ---
+    C = np.zeros(3)          # position caméra monde
+    R = np.eye(3)            # orientation caméra → monde
+
+    traj = [C.copy()]
+    z_axes = [R[:, 2].copy()]
+
+    for k, p in enumerate(p_list):
+
+        # --- Paramètres image -> angles caméra ---
+        yaw   = (p.tx / Q16) * ifov_rad_per_pix
+        pitch = (p.ty / Q16) * ifov_rad_per_pix
+        roll  = (p.theta / Q16)
+
+        # --- Rotation incrémentale caméra ---
+        R_inc = rot_z(roll) @ rot_x(pitch) @ rot_y(yaw)
+
+        # --- Mise à jour orientation monde ---
+        R = R @ R_inc
+
+        # --- Translation caméra (dans repère caméra courant) ---
+        dZ = - Z_ref * (p.div / Q16)
+        t_cam = np.array([0, 0, dZ])
+
+        # --- Passage en monde ---
+        t_world = R @ t_cam
+        C = C + t_world
+
+        traj.append(C.copy())
+        z_axes.append(R[:, 2].copy())
+
+    traj = np.array(traj)
+    z_axes = np.array(z_axes)
+
+    # --- Affichage ---
+    if show:
+        fig = plt.figure(20)
+        ax = fig.add_subplot(111, projection="3d")
+
+        ax.plot(-traj[:, 2], traj[:, 1], traj[:, 0], "-o", label="Trajectoire caméra")
+
+        # Affichage de l’axe optique
+        for i in range(0, len(traj), max(1, len(traj)//10)):
+            ax.quiver(
+                -traj[i, 2], traj[i, 1], traj[i, 0],
+                z_axes[i, 2], -z_axes[i, 1], -z_axes[i, 0],
+                length=Z_ref * 0.2,
+                color="r"
+            )
+
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        ax.set_title("Déplacement caméra (axe optique variable)")
+        ax.legend()
+        ax.set_zlim(traj[:,2].min(), traj[:,2].max())
+        ax.set_xlim(traj[:,2].min(), -traj[:,2].min())
+        ax.set_ylim(traj[:,2].min(), -traj[:,2].min())
+        #ax.axis("equal")
+        plt.tight_layout()
+        plt.show()
+
+    return traj, z_axes
+
+    
 def ssd_huber_gradient_q16_py(points_ref, img_cur, p, huber_delta_q16):
     h, w = img_cur.shape
     h = h - 15
@@ -359,6 +496,7 @@ def show_image_with_points(image, points_ref, params, ax, title=""):
     #plt.show()
     
 def show_dual_scale(img_d, pts_d, p_d, img_f, pts_f, p_f, fig):
+    plt.figure(1)
     fig.clf()
 
     ax1 = fig.add_subplot(121)
@@ -412,9 +550,136 @@ def run_gradient_on_pair(index, nb_iter=100, alpha_q16=1<<8):
 
     return p
 
-#for it in range(0, 31):
+def ssd_huber_cost_q16(points_ref, img_cur, p, huber_delta_q16):
+    h, w = img_cur.shape
+    h -= 7 # 7 pour l'image décimée
+    w -= 7 # 7 pour l'image décimée
+
+    c = q16_cos(p.theta)
+    s = q16_sin(p.theta)
+    scale = Q16_ONE + p.div
+
+    cost = 0
+    n = 0
+
+    for wpt in points_ref:
+        y = (wpt >> Y_SHIFT) & COORD_MASK
+        x = (wpt >> X_SHIFT) & COORD_MASK
+        pix_ref = (wpt >> PIX_SHIFT) & PIX_MASK
+
+        if x <= 0 or x >= w-1 or y <= 0 or y >= h-1:
+            continue
+
+        x_q = x << Q16_SHIFT
+        y_q = y << Q16_SHIFT
+
+        dx = x_q - p.vp_x
+        dy = y_q - p.vp_y
+
+        dxp = q16_mul(dx, scale)
+        dyp = q16_mul(dy, scale)
+
+        dxr = q16_mul(dxp, c) - q16_mul(dyp, s)
+        dyr = q16_mul(dxp, s) + q16_mul(dyp, c)
+
+        xw = p.vp_x + dxr + p.tx
+        yw = p.vp_y + dyr + p.ty
+
+        xi = xw >> Q16_SHIFT
+        yi = yw >> Q16_SHIFT
+
+        if xi <= 0 or xi >= w-1 or yi <= 0 or yi >= h-1:
+            continue
+
+        Ic = read_bilineaire(img_cur, xw, yw)
+        e_q = Ic - (pix_ref << Q16_SHIFT)
+        ae = abs(e_q)
+        if ae > huber_delta_q16:
+            ae = q16_mul(ae, 2*huber_delta_q16)
+        else:
+            ae = q16_mul(ae, ae)
+
+        cost += ae
+        n += 1
+
+    return cost // max(1, n)
+
+def exhaustive_init_with_display(points, img, p_ref, huber_delta_q16, fig):
+    theta_vals = [
+        int(-0.05 * Q16),
+        0,
+        int(+0.05 * Q16)
+    ]
+
+    costs = np.zeros((3, 7, 7), dtype=np.int64)
+
+    best_cost = None
+    best_p = None
+
+    # --- Calcul exhaustif ---
+    for k, th in enumerate(theta_vals):
+        for iy, ty in enumerate(range(-3, 4)):
+            for ix, tx in enumerate(range(-3, 4)):
+
+                p_test = TransformParamQ16(
+                    div=0,
+                    theta=th,
+                    tx=tx * Q16,
+                    ty=ty * Q16,
+                    vp_x=p_ref.vp_x,
+                    vp_y=p_ref.vp_y
+                )
+
+                c = ssd_huber_cost_q16(
+                    points,
+                    img,
+                    p_test,
+                    huber_delta_q16
+                )
+
+                costs[k, iy, ix] = c
+
+                if best_cost is None or c < best_cost:
+                    best_cost = c
+                    best_p = p_test
+
+    # --- Affichage ---
+    fig.clf()
+    vmin = 0
+    vmax = costs.max()/65536
+
+    titles = [
+        "theta = -0.05 rad",
+        "theta =  0.00 rad",
+        "theta = +0.05 rad"
+    ]
+
+    for k in range(3):
+        ax = fig.add_subplot(1, 3, k+1)
+        im = ax.imshow(
+            costs[k]/65536,
+            cmap="viridis",
+            vmin=vmin,
+            vmax=vmax,
+            origin="upper"
+        )
+
+        ax.set_title(titles[k])
+        ax.set_xticks(range(5))
+        ax.set_yticks(range(5))
+        ax.set_xticklabels([-3, -2, -1, 0, 1, 2, 3])
+        ax.set_yticklabels([-3, -2, -1, 0, 1, 2, 3])
+        ax.set_xlabel("tx")
+        ax.set_ylabel("ty")
+
+    #fig.colorbar(im, ax=fig.axes, shrink=0.8)
+    plt.tight_layout()
+    plt.pause(0.1)
+
+    return best_p, best_cost
+
     
-def gradient_huber_2ech_float(
+def gradient_huber_2ech(
     index,
     nb_iter=100,
     step0_tx=1.0,
@@ -423,13 +688,14 @@ def gradient_huber_2ech_float(
     step0_div=0.01
 ):
     # --- Chargement ---
-    img_full = load_image_u8(f"images/{index:04d}.png")
-    img_dec  = load_image_u8(f"images_r/{index:04d}.png")
+    img_full = load_image_u8(f"images/{index+1:04d}.png")
+    img_dec  = load_image_u8(f"images_r/{index+1:04d}.png")
 
-    points_full = load_points_csv_as_uint32(f"points/{index+1:04d}.csv")
-    points_dec  = load_points_csv_as_uint32(f"points_r/{index+1:04d}.csv")
+    points_full = load_points_csv_as_uint32(f"points/{index:04d}.csv")
+    points_dec  = load_points_csv_as_uint32(f"points_r/{index:04d}.csv")
 
-    plt.ion()
+
+    #plt.ion()
     fig = plt.figure(1)
 
     # =====================
@@ -455,7 +721,32 @@ def gradient_huber_2ech_float(
         vp_x=(p.vp_x >> 3)-(7<< Q16_SHIFT),
         vp_y=(p.vp_y >> 3)-(7<< Q16_SHIFT)
     )
-    print(p_d.vp_y/65536)
+    
+    # =====================
+    # INITIALISATION ROBUSTE + VISUALISATION
+    # =====================
+    fig_init = plt.figure(10)
+    p_best, best_cost = exhaustive_init_with_display(
+        points_dec,
+        img_dec,
+        p_d,
+        huber_delta_q16=10 * Q16,
+        fig=fig_init
+    )
+
+    p_d.div   = p_best.div
+    p_d.theta = p_best.theta
+    p_d.tx    = p_best.tx
+    p_d.ty    = p_best.ty
+
+    print(
+        "[init coarse] "
+        f"cost={best_cost} "
+        f"th={p_d.theta/Q16:+.3f} "
+        f"tx={p_d.tx/Q16:+.1f} "
+        f"ty={p_d.ty/Q16:+.1f}"
+    )
+
     alpha = 1
     for it in range(nb_iter):
         # --- Pas affine ---
@@ -498,7 +789,7 @@ def gradient_huber_2ech_float(
         elif g.div < 0:
             p_d.div += int(step_div * Q16)
             
-        if it % 10 == 0:
+        if it % 50 == 0:
             print(
                 f"[fine] it {it:3d} | "
                 f"div={p.div/Q16:+.6f} "
@@ -570,7 +861,7 @@ def gradient_huber_2ech_float(
             p.div += int(step_div * Q16)
 
 
-        if it % 10 == 0:
+        if it % 100 == 0:
             print(
                 f"[fine] it {it:3d} | "
                 f"div={p.div/Q16:+.6f} "
@@ -589,6 +880,61 @@ def gradient_huber_2ech_float(
 
     return p
 
-it = 34
-#run_gradient_on_pair(it, 1000)
-gradient_huber_2ech_float(it, 100, 1, 1, 0.02, 0.01)
+
+x0 = 182
+y0 = 70
+d  = 10
+
+x_q16 = [
+    (x0 + d) * Q16,
+    (x0 - d) * Q16,
+    x0 * Q16,
+    x0 * Q16,
+    x0 * Q16,
+]
+
+y_q16 = [
+    y0 * Q16,
+    y0 * Q16,
+    y0 * Q16,
+    (y0 + d) * Q16,
+    (y0 - d) * Q16,
+]
+
+plt.ion()
+fig2 = plt.figure(2)
+ax = fig2.subplots()
+
+plt.pause(5)
+
+p_history = []
+for it in range(1, 29):
+
+    img_full = load_image_u8(f"images/{it+1:04d}.png")
+
+    # Cette fonction vole la figure active
+    p = gradient_huber_2ech(it, 100, 1, 1, 0.02, 0.01)
+    p_history.append(p)
+
+    # Reprendre explicitement la main
+    plt.figure(fig2.number)
+
+    #x_q16, y_q16 = tranform_point_q16(x_q16, y_q16, p)
+
+    ax.clear()
+    ax.imshow(img_full, cmap="gray", vmin=0, vmax=255)
+
+    xc = np.array([x >> 16 for x in x_q16])
+    yc = np.array([y >> 16 for y in y_q16])
+
+    ax.plot(xc, yc, c="red", alpha=0.7)
+
+    ax.set_title("tracking")
+    ax.set_xlim(0, 320)
+    ax.set_ylim(240, 0)
+    
+    traj, z_axes = integrate_camera_motion(p_history, ifov_rad_per_pix=0.003627, Z_ref=50.0)
+    
+    plt.pause(0.1)
+
+

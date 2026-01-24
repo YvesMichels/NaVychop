@@ -20,7 +20,7 @@ IMG_HEIGHT = 240
 IMG_WIDTH_R = 40
 IMG_HEIGHT_R = 30
 MAX_POINTS = 300
-MAX_POINTS_R = 104
+MAX_POINTS_R = 187
 
 # Crée dossiers de sauvegarde
 os.makedirs("images", exist_ok=True)
@@ -217,21 +217,21 @@ try:
                 continue
 
             # --- Affichage ---
-            im_l.set_data(img)
-            ax_l.set_title(f"{width}x{height} | pts={nb_pts}")
+            # im_l.set_data(img)
+            # ax_l.set_title(f"{width}x{height} | pts={nb_pts}")
             
-            im_r.set_data(img_r)
-            ax_r.set_title(f"{width_r}x{height_r}")
-            # Affiche points
-            for y, x, pix, grad in points[:MAX_POINTS]:
-                ax_l.plot(x, y, marker='+', color='red', markersize=(1+grad))
+            # im_r.set_data(img_r)
+            # ax_r.set_title(f"{width_r}x{height_r}")
+            # # Affiche points
+            # for y, x, pix, grad in points[:MAX_POINTS]:
+            #     ax_l.plot(x, y, marker='+', color='red', markersize=(1+grad))
                 
-            for y, x, pix, grad in points_r[:MAX_POINTS_R]:
-                ax_r.plot(x, y, marker='+', color='red', markersize=(1+grad))
+            # for y, x, pix, grad in points_r[:MAX_POINTS_R]:
+            #     ax_r.plot(x, y, marker='+', color='red', markersize=(1+grad))
 
-            fig.canvas.draw_idle()
-            plt.pause(0.1)
-            ax_l.lines.clear()  # supprime les croix pour le prochain paquet
+            # fig.canvas.draw_idle()
+            # plt.pause(0.1)
+            # ax_l.lines.clear()  # supprime les croix pour le prochain paquet
             
             # --- Sauvegarde ---
             imageio.imwrite(f"images/{index:04d}.png", img)

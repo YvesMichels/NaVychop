@@ -261,18 +261,18 @@ uint32_t exhaustive_init(
     int32_t huber_delta_q16
 ) {
     int32_t theta_vals[5] = {
-        (int32_t)(-6554),
-        (int32_t)(-3277),
+        (int32_t)(-13107),//
+        (int32_t)(-6554),//
         (int32_t) 0,
-        (int32_t)(3277),
-        (int32_t)(6554)
+        (int32_t)(6554),//
+        (int32_t)(13107)//
     };
 
     uint32_t best_cost = UINT32_MAX;
 
     for (uint8_t k = 0; k < 5; k++) {
-        for (int32_t ty = -3; ty <= 3; ty++) {
-            for (int32_t tx = -3; tx <= 3; tx++) {
+        for (int32_t ty = -4; ty <= 4; ty+=2) {
+            for (int32_t tx = -4; tx <= 4; tx+=2) {
 
                 transform_param_q16_t p_test = {
                     .div   = 0,
@@ -306,11 +306,12 @@ uint32_t exhaustive_init(
     return best_cost;
 }
 
+
 void huber_gradient_q16(
     uint32_t *points_ref,
     int nb_points,
     uint8_t *img_cur,
-    int width, int height,
+    int jdim, int idim,
     transform_param_q16_t *p,
     int32_t huber_delta_q16,
     transform_grad_q16_t *g_out
@@ -321,25 +322,23 @@ void huber_gradient_q16(
     int64_t g_tx = 0;
     int64_t g_ty = 0;
 
+
     int32_t c = q16_cos(p->theta);
     int32_t s = q16_sin(p->theta);
     int32_t scale = Q16_ONE + p->div;
+    int edg = 16;
+    if(idim < 64){
+        edg = 8;
+    }
 
     for (int i = 0; i < nb_points; i++) {
 
         uint32_t w = points_ref[i];
 
-        /* ---- extraction point référence ---- */
         int32_t y = (w >> Y_SHIFT) & COORD_MASK;
         int32_t x = (w >> X_SHIFT) & COORD_MASK;
         int32_t pix_ref = (w >> PIX_SHIFT) & PIX_MASK;
-        /* HF_im disponible mais non utilisé */
 
-        if (x <= 0 || x >= width - 15 ||
-            y <= 0 || y >= height - 15)
-            continue;
-
-        /* ---- coordonnées Q16 ---- */
         int32_t x_q = x << Q16_SHIFT;
         int32_t y_q = y << Q16_SHIFT;
 
@@ -358,33 +357,34 @@ void huber_gradient_q16(
         int xi = xw >> Q16_SHIFT;
         int yi = yw >> Q16_SHIFT;
 
-        if (xi <= 0 || xi >= width - 15 ||
-            yi <= 0 || yi >= height - 15)
+        if (xi <= 0 || xi >= jdim - edg ||
+            yi <= 0 || yi >= idim - edg)
             continue;
 
         /* ---- erreur photométrique ---- */
-        int32_t Ic = img_cur[yi * width + xi];
-        int32_t e = Ic - pix_ref;          // Q0
-        int32_t e_q = e << Q16_SHIFT;      // Q16.16
+        int32_t Ic = read_bilineaire(img_cur, xw, yw, idim, jdim);
+        int32_t e = Ic - (pix_ref << Q16_SHIFT);  // Q16.16
 
-        /* ---- Huber : résidu tronqué ---- */
-        int32_t abs_e = (e_q >= 0) ? e_q : -e_q;
-        int32_t e_huber;
+        /* ---- dérivée du Huber ---- */
+        int32_t ae = e >= 0 ? e : -e;
+        int32_t w_h;
 
-        if (abs_e <= huber_delta_q16) {
-            e_huber = e_q;
+        if (ae < huber_delta_q16) {
+            w_h = e << 1;  // 2e
         } else {
-            e_huber = (e_q >= 0) ? huber_delta_q16 : -huber_delta_q16;
+            w_h = (e >= 0) ? (huber_delta_q16 << 1)
+                           : -(huber_delta_q16 << 1);
         }
 
-        /* ---- gradient image (image courante) ---- */
+        /* ---- simple gradient image ---- */
+        // décentré de 0.5 pixel mais suffisant pour une descente de gradient sanchant le filtrage gaussien appliqué à l'image
         int32_t Ix =
-            ((int32_t)img_cur[yi * width + xi + 1]
-           - (int32_t)img_cur[yi * width + xi - 1]) << Q16_SHIFT;
+            ((int32_t)img_cur[yi * jdim + xi + 1]
+           - (int32_t)img_cur[yi * jdim + xi]) << Q16_SHIFT;
 
         int32_t Iy =
-            ((int32_t)img_cur[(yi + 1) * width + xi]
-           - (int32_t)img_cur[(yi - 1) * width + xi]) << Q16_SHIFT;
+            ((int32_t)img_cur[(yi + 1) * jdim + xi]
+           - (int32_t)img_cur[yi * jdim + xi]) << Q16_SHIFT;
 
         /* ---- dérivées géométriques ---- */
         int32_t dxd_div = q16_mul(dx, c) - q16_mul(dy, s);
@@ -394,20 +394,68 @@ void huber_gradient_q16(
         int32_t dyd_th =  q16_mul(dxp, c) - q16_mul(dyp, s);
 
         /* ---- accumulation gradient ---- */
-        g_div += (int64_t)e_huber *
-                 ((int64_t)Ix * dxd_div +
-                  (int64_t)Iy * dyd_div) >> Q16_SHIFT;
+        g_div   += (int64_t)w_h *
+                   ((int64_t)Ix * dxd_div +
+                    (int64_t)Iy * dyd_div) >> Q16_SHIFT;
 
-        g_theta += (int64_t)e_huber *
+        g_theta += (int64_t)w_h *
                    ((int64_t)Ix * dxd_th +
                     (int64_t)Iy * dyd_th) >> Q16_SHIFT;
 
-        g_tx += (int64_t)e_huber * Ix;
-        g_ty += (int64_t)e_huber * Iy;
+        g_tx += (int64_t)w_h * Ix;
+        g_ty += (int64_t)w_h * Iy;
     }
-
+    // division par 256 (environ égal au nombre de points) 
+    // calcul exact non nécessaire car ici seule la direction compte : variable = variable - k * signe(grad)
+    g_div = g_div >> 8;
+    g_theta = g_theta >> 8;
+    g_tx = g_tx >> 8;
+    g_ty = g_ty >> 8;
     g_out->div   = (int32_t)(g_div   >> Q16_SHIFT);
     g_out->theta = (int32_t)(g_theta >> Q16_SHIFT);
     g_out->tx    = (int32_t)(g_tx    >> Q16_SHIFT);
     g_out->ty    = (int32_t)(g_ty    >> Q16_SHIFT);
+}
+
+void optim_huber_grad_q16(
+    uint8_t *img_cur, int idim, int jdim,
+    uint32_t *points_ref, int nb_points,
+    transform_param_q16_t *p, int nb_iter,
+    int32_t step0_tx, int32_t step0_ty, int32_t step0_theta, int32_t step0_div, int32_t huber_delta_q16, int32_t *logs)
+{
+    int32_t alpha_q16 = 1 << 16;   // alpha = 1.0 en Q16
+
+    for (int it = 0; it < nb_iter; it++) {
+
+        // --- alpha *= 0.9 ---
+        alpha_q16 = (alpha_q16 * 58982) >> 16;  // 0.9 en Q16
+
+        // --- pas effectifs ---
+        int32_t step_tx    = (step0_tx    * alpha_q16) >> 16;
+        int32_t step_ty    = (step0_ty    * alpha_q16) >> 16;
+        int32_t step_theta = (step0_theta * alpha_q16) >> 16;
+        int32_t step_div   = (step0_div   * alpha_q16) >> 16;
+
+        // --- gradient ---
+        transform_grad_q16_t g;
+        huber_gradient_q16(points_ref, nb_points, img_cur, jdim, idim, p, huber_delta_q16, &g);
+        /*logs[4*it] = g.div;
+        logs[4*it+1] = g.theta;
+        logs[4*it+2] = g.tx;
+        logs[4*it+3] = g.ty;
+        logs[40+it] = alpha_q16;*/
+
+        // --- mise à jour par signe ---
+        if (g.tx > 0)      p->tx += step_tx;
+        else if (g.tx < 0) p->tx -= step_tx;
+
+        if (g.ty > 0)      p->ty += step_ty;
+        else if (g.ty < 0) p->ty -= step_ty;
+
+        if (g.theta > 0)      p->theta += step_theta;
+        else if (g.theta < 0) p->theta -= step_theta;
+
+        if (g.div > 0)      p->div += step_div;
+        else if (g.div < 0) p->div -= step_div;
+    }
 }

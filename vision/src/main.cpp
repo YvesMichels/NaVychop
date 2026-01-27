@@ -21,6 +21,7 @@ static uint8_t im_red[IDIM_R*JDIM_R];
 static uint8_t im_conv_red[IDIM_R*JDIM_R];
 static uint32_t points_ref[MAX_POINTS];
 static uint32_t points_ref_red[MAX_POINTS_R];
+static int32_t logs[64]; // vecteur d'intrumentation du code pour les vérifications
 
 // transformation
 transform_param_q16_t p_red;
@@ -29,6 +30,7 @@ sensor_t *s;
 
 // gestion du temps
 unsigned long tps_0, tps;
+int ind_tps = 0;
 
 /* A METTRE DANS COMMUNICATION */
 #define SYNC_1 0xAA
@@ -37,10 +39,7 @@ unsigned long tps_0, tps;
 #define SYNC_4 0x33
 
 #define TRANSFORM_FORMAT 0x42
-void send_transform_and_cost(
-    const transform_param_q16_t *p,
-    uint32_t cost_q16
-) {
+void send_transform_and_cost(const transform_param_q16_t *p, uint32_t cost_q16, int32_t *logs) {
     uint8_t checksum = 0;
 
     // --- Synchronisation 4 octets ---
@@ -69,6 +68,19 @@ void send_transform_and_cost(
 
     for (uint8_t i = 0; i < 6; i++) {
         v = (uint32_t)params[i];
+        b0 = (uint8_t)(v & 0xFF);
+        b1 = (uint8_t)((v >> 8) & 0xFF);
+        b2 = (uint8_t)((v >> 16) & 0xFF);
+        b3 = (uint8_t)((v >> 24) & 0xFF);
+
+        Serial.write(b0); checksum ^= b0;
+        Serial.write(b1); checksum ^= b1;
+        Serial.write(b2); checksum ^= b2;
+        Serial.write(b3); checksum ^= b3;
+    }
+
+    for (uint8_t i = 0; i < 64; i++) {
+        v = (uint32_t)logs[i];
         b0 = (uint8_t)(v & 0xFF);
         b1 = (uint8_t)((v >> 8) & 0xFF);
         b2 = (uint8_t)((v >> 16) & 0xFF);
@@ -168,16 +180,11 @@ void setup() {
 
 void loop() {
     // Capture et traitement N_IMAGES
-    for (uint8_t idx = 0; idx < N_IMAGES; idx++) {
-        camera_fb_t* fb = esp_camera_fb_get();
-        if (!fb) {
-            idx--; // réessayer la capture
-            delay(50);
-            continue;
-        }
-
-        
+    camera_fb_t* fb = esp_camera_fb_get();
+    if (fb) {
         tps = millis() - tps_0;
+        logs[ind_tps] = (int32_t) millis();
+        ind_tps = ind_tps + 1;
         s = esp_camera_sensor_get();
         uint16_t aec_value = s->status.aec_value;
         uint8_t agc_gain  = s->status.agc_gain;
@@ -185,63 +192,79 @@ void loop() {
         uint32_t cam_param = aec_value + (ae_level << 16) + (agc_gain << 24);
         uint32_t init_cost;
         uint8_t* img = fb->buf;
-
+        logs[ind_tps] = (int32_t) millis();
+        ind_tps = ind_tps + 1;
 
         // Initialisation transformation de référence (image réduite 40x30)
         p_red.div   = 0;
         p_red.theta = 0;
         p_red.tx    = 0;
         p_red.ty    = 0;
-        p_red.vp_x  = (JDIM_R / 2) << 16;
-        p_red.vp_y  = (IDIM_R / 2) << 16;
+        p_red.vp_x  = (JDIM_R / 2 - 4) << 16;
+        p_red.vp_y  = (IDIM_R / 2 - 4) << 16;
 
         // Réduction
         red_image(im_red, img);
+        logs[ind_tps] = (int32_t) millis();
+        ind_tps = ind_tps + 1;
 
         // Traitement image complète
-        //gaussian_blur_15x15_stream_8bits(im_conv, img, IDIM, JDIM);
-        //norme_gradient_L1_8bits(img, im_conv, IDIM, JDIM);
-        //extract_points(img, im_conv, points_ref);
+        gaussian_blur_15x15_stream_8bits(im_conv, img, IDIM, JDIM);
+        norme_gradient_L1_8bits(img, im_conv, IDIM, JDIM);
+        logs[ind_tps] = (int32_t) millis();
+        ind_tps = ind_tps + 1;
 
         // Traitement image réduite
         gaussian_blur_7x7_stream_8bits(im_conv_red, im_red, IDIM_R, JDIM_R);
         //init_cost = exhaustive_init(points_ref_red, MAX_POINTS_R, im_conv_red, &p_red, (int32_t) 10*65536);
         
-        init_cost = exhaustive_init(points_ref_red, MAX_POINTS_R, im_conv_red, &p_red, 10*65536);
-        
-        send_transform_and_cost(&p_red, init_cost);
-   
+        logs[ind_tps] = (int32_t) millis();
+        ind_tps = ind_tps + 1;
 
+        init_cost = exhaustive_init(points_ref_red, MAX_POINTS_R, im_conv_red, &p_red, 655360);
+        
+        logs[ind_tps] = (int32_t) millis();
+        ind_tps = ind_tps + 1;
+
+        optim_huber_grad_q16(im_conv_red, IDIM_R, JDIM_R, points_ref_red, MAX_POINTS_R, &p_red, 25, 10000, 10000, 1000, 500, 655360, logs);
+        
+        logs[ind_tps] = (int32_t) millis();
+        ind_tps = ind_tps + 1;
+
+        // passage à l'échelle supérieure
+        p_red.tx    = p_red.tx<<3;
+        p_red.ty    = p_red.ty<<3;
+        p_red.vp_x  = (JDIM / 2 - 8) << 16;
+        p_red.vp_y  = (IDIM / 2 - 8) << 16;
+
+        optim_huber_grad_q16(im_conv, IDIM, JDIM, points_ref, MAX_POINTS, &p_red, 25, 30000, 30000, 500, 200, 655360, logs);
+        
+        logs[ind_tps] = (int32_t) millis();
+        ind_tps = ind_tps + 1;
         
         
+        /* Extraction des points d'intérets (pour la trame suivante)*/
+        extract_points(img, im_conv, points_ref);
+        
+        logs[ind_tps] = (int32_t) millis();
+        ind_tps = ind_tps + 1;
         extract_points_red(im_conv_red, points_ref_red);
-        esp_camera_fb_return(fb);
+        
+        logs[ind_tps] = (int32_t) millis();
+        ind_tps = ind_tps + 1;
 
+        
+        ind_tps = 0;
+        logs[ind_tps] = (int32_t) millis();
+        ind_tps = ind_tps + 1;
+        send_transform_and_cost(&p_red, init_cost, logs);
+        
+        logs[ind_tps] = (int32_t) millis();
+        ind_tps = ind_tps + 1;
     }
 
-/*
-    // Après les 20 images, envoi UART
-    for (uint8_t idx = 0; idx < N_IMAGES; idx++) {
-        send_motion_data(
-            psram_im_conv[idx], JDIM, IDIM,
-            psram_im_conv_red[idx], JDIM_R, IDIM_R,
-            psram_points_ref[idx], MAX_POINTS,
-            psram_points_ref_red[idx], MAX_POINTS_R,
-            0 // cam_param non utilisé ici ou stocker si besoin
-        );
+    
+    
+    esp_camera_fb_return(fb);
 
-        // Indication visuelle : LED flash rapide pendant envoi
-        digitalWrite(LED_FLASH_PIN, HIGH);
-        delay(20);
-        digitalWrite(LED_FLASH_PIN, LOW);
-        delay(2000);
-    }
-
-    // Fin du programme, rien à faire après
-    while(1) {
-        // LED allumée fixe pour signaler fin
-        digitalWrite(LED_FLASH_PIN, LOW);
-        delay(1000);
-    }
-*/
 }

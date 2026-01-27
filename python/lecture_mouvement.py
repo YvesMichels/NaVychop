@@ -62,13 +62,19 @@ def read_transform_packet(ser):
     for b in raw_params:
         checksum ^= b
     params_q16 = struct.unpack("<6i", raw_params)
+    
+    # --- Logs 256 octets
+    raw_params = read_exact(ser, 64 * 4)
+    for b in raw_params:
+        checksum ^= b
+    logs_q16 = struct.unpack("<64i", raw_params)
 
     # --- Checksum reçu
     checksum_rx = read_exact(ser, 1)[0]
     if checksum != checksum_rx:
         raise ValueError(f"Checksum incorrect (calc={checksum:#02x}, rx={checksum_rx:#02x})")
 
-    return cost_q16, params_q16
+    return cost_q16, params_q16, logs_q16
 
 # =======================
 # Visualisation
@@ -76,7 +82,7 @@ def read_transform_packet(ser):
 
 def plot_cross(tx, ty, theta, ax):
     """Affiche une croix centrée en (tx, ty) et orientée selon theta (rad)."""
-    L = 2.0  # longueur demi-bras de la croix en pixels
+    L = 15.0  # longueur demi-bras de la croix en pixels
     # Rotation de la croix
     R = np.array([[np.cos(theta), -np.sin(theta)],
                   [np.sin(theta),  np.cos(theta)]])
@@ -95,8 +101,8 @@ def plot_cross(tx, ty, theta, ax):
     ax.cla()
     ax.plot(coords_rot[0, 0:2], coords_rot[1, 0:2], 'r-', linewidth=2)  # horizontale
     ax.plot(coords_rot[0, 2:4], coords_rot[1, 2:4], 'r-', linewidth=2)  # verticale
-    ax.set_xlim(-5, 5)
-    ax.set_ylim(-5, 5)
+    ax.set_xlim(-250, 250)
+    ax.set_ylim(-250, 250)
     ax.set_aspect('equal')
     ax.grid(True)
     ax.set_title(f"tx={tx:+.2f}, ty={ty:+.2f}, theta={theta:.3f}")
@@ -114,25 +120,32 @@ def motion_reader():
         print("Ctrl+C pour arrêter\n")
 
         fig, ax = plt.subplots()
-
+        tx_cum = 0
+        ty_cum = 0
+        theta_cum = 0
         while True:
             wait_for_sync(ser)
             try:
-                cost, (div, theta, tx, ty, vp_x, vp_y) = read_transform_packet(ser)
-
+                cost, (div, theta, tx, ty, vp_x, vp_y), logs_q16 = read_transform_packet(ser)
                 # Conversion en float
                 tx_f = tx / 65536.0
                 ty_f = ty / 65536.0
                 theta_f = theta / 65536.0  # radians approximatifs
+                tx_cum = tx_cum + tx_f
+                ty_cum = ty_cum + ty_f
+                theta_cum = theta_cum + theta_f
 
                 print(f"cost={cost/65536:8.4f} | "
                       f"zoom=({div:+.4f}) | "
                       f"Rot=({theta_f:+.4f}) | "
                       f"trans=({tx_f:+.4f},{ty_f:+.4f}) | "
                       f"centre=({vp_x/65536:+.4f},{vp_y/65536:+.4f})")
+                
+                for it in range(1, 11):
+                    print(logs_q16[it]-logs_q16[it-1])
 
                 # Affichage
-                plot_cross(tx_f, ty_f, theta_f, ax)
+                plot_cross(tx_cum, ty_cum, -theta_cum, ax)
 
             except ValueError as e:
                 print("Paquet rejeté :", e)
@@ -144,7 +157,7 @@ def motion_reader():
         if ser and ser.is_open:
             ser.close()
             print("Port série fermé")
-        plt.close(fig)
+            plt.close(fig)
 
 # =======================
 # Lancement

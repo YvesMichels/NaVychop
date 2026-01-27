@@ -70,43 +70,6 @@ void hist_cum(uint32_t *histo, uint8_t *img){
   }
 }
 
-/*int32_t read_bilineaire(uint8_t* image, int32_t x_q, int32_t y_q, int idim, int jdim)
-{
-    // Partie entière
-    int32_t x0 = x_q >> Q16_SHIFT;
-    int32_t y0 = y_q >> Q16_SHIFT;
-
-    // Vérification des bornes (on évite x0+1, y0+1 hors image)
-    if (x0 < 0 || x0 >= idim - 1 ||
-        y0 < 0 || y0 >= jdim - 1)
-    {
-        return 0;
-    }
-
-    // Partie fractionnaire (Q16.16)
-    int32_t fx = x_q & (Q16_ONE - 1);
-    int32_t fy = y_q & (Q16_ONE - 1);
-
-    int32_t fx1 = Q16_ONE - fx;
-    int32_t fy1 = Q16_ONE - fy;
-
-    // Accès pixels (8 bits)
-    int32_t I00 = (int32_t) image[y0 * jdim + x0];
-    int32_t I10 = (int32_t) image[y0 * jdim + (x0 + 1)];
-    int32_t I01 = (int32_t) image[(y0 + 1) * jdim + x0];
-    int32_t I11 = (int32_t) image[(y0 + 1) * jdim + (x0 + 1)];
-
-    // Interpolation bilinéaire factorisée
-    // Étape X
-    int32_t i0 = (I00 * fx1 + I10 * fx)>>8;  // Q16.8 
-    int32_t i1 = (I01 * fx1 + I11 * fx)>>8;  // Q16.8
-
-    // Étape Y
-    int32_t i  = i0 * fy1 + i1 * fy;    // Q8.24 → implicitement
-
-    // Normalisation finale vers Q16.16
-    return (int32_t) (i >> 8);
-}*/
 
 int32_t read_bilineaire(
     uint8_t* image,

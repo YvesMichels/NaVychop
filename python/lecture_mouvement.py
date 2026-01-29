@@ -52,27 +52,28 @@ def read_transform_packet(ser):
         raise ValueError("Format TRANSFORM invalide")
 
     # --- Coût
-    raw_cost = read_exact(ser, 4)
-    for b in raw_cost:
-        checksum ^= b
-    cost_q16 = struct.unpack("<I", raw_cost)[0]
+    # raw_cost = read_exact(ser, 4)
+    # for b in raw_cost:
+    #     checksum ^= b
+    # cost_q16 = struct.unpack("<I", raw_cost)[0]
+    cost_q16 = 0
 
     # --- Paramètres transformation
-    raw_params = read_exact(ser, 6 * 4)
+    raw_params = read_exact(ser, 3 * 2)
     for b in raw_params:
         checksum ^= b
-    params_q16 = struct.unpack("<6i", raw_params)
+    params_q16 = struct.unpack("<3h", raw_params)
     
     # --- Logs 256 octets
-    raw_params = read_exact(ser, 64 * 4)
+    raw_params = read_exact(ser, 16 * 4)
     for b in raw_params:
         checksum ^= b
-    logs_q16 = struct.unpack("<64i", raw_params)
+    logs_q16 = struct.unpack("<16i", raw_params)
 
     # --- Checksum reçu
     checksum_rx = read_exact(ser, 1)[0]
-    if checksum != checksum_rx:
-        raise ValueError(f"Checksum incorrect (calc={checksum:#02x}, rx={checksum_rx:#02x})")
+    # if checksum != checksum_rx:
+    #     raise ValueError(f"Checksum incorrect (calc={checksum:#02x}, rx={checksum_rx:#02x})")
 
     return cost_q16, params_q16, logs_q16
 
@@ -126,22 +127,20 @@ def motion_reader():
         while True:
             wait_for_sync(ser)
             try:
-                cost, (div, theta, tx, ty, vp_x, vp_y), logs_q16 = read_transform_packet(ser)
+                cost, (theta, tx, ty), logs_q16 = read_transform_packet(ser)
                 # Conversion en float
-                tx_f = tx / 65536.0
-                ty_f = ty / 65536.0
+                tx_f = tx / 256.0
+                ty_f = ty / 256.0
                 theta_f = theta / 65536.0  # radians approximatifs
                 tx_cum = tx_cum + tx_f
                 ty_cum = ty_cum + ty_f
                 theta_cum = theta_cum + theta_f
 
                 print(f"cost={cost/65536:8.4f} | "
-                      f"zoom=({div:+.4f}) | "
                       f"Rot=({theta_f:+.4f}) | "
-                      f"trans=({tx_f:+.4f},{ty_f:+.4f}) | "
-                      f"centre=({vp_x/65536:+.4f},{vp_y/65536:+.4f})")
+                      f"trans=({tx_f:+.4f},{ty_f:+.4f}) | ")
                 
-                for it in range(1, 11):
+                for it in range(1, 13):
                     print(logs_q16[it]-logs_q16[it-1])
 
                 # Affichage

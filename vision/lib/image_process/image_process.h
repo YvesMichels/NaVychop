@@ -11,6 +11,7 @@
 void hist_cum(uint32_t *histo, uint8_t *img);
 int32_t read_bilineaire(uint8_t* image, int32_t x_q, int32_t y_q, int idim, int jdim);
 void gaussian_blur_15x15_stream_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim);
+void gaussian_blur_9x9_stream_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim);
 void gaussian_blur_7x7_stream_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim);
 void norme_gradient_L1_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim);
 uint16_t extract_points(uint8_t *im_grad, uint8_t *im_gauss, uint32_t *points_ref);
@@ -18,6 +19,8 @@ uint16_t extract_points_red(uint8_t *im_gauss, uint32_t *points_ref);
 void mark_points(uint8_t *im, uint32_t *points_ref, uint16_t nb_points);
 void copy_image(uint8_t *out, const uint8_t *in, uint32_t n_pixels);
 void red_image(uint8_t *out, const uint8_t *in);
+
+void gaussian_blur_15x15_stream_8bits_band(uint8_t *out,const uint8_t *in, int idim, int jdim, int i_start, int i_end, uint8_t row_buf[15][JDIM]);
 
 // --- I/O / debug ---
 void send_image(uint8_t *img);

@@ -44,7 +44,7 @@ static const uint8_t gauss15[15] = {2, 4, 8, 16, 21, 28, 34, 36, 34, 28, 21, 13,
 // row_buf: buffer intermédiaire 9 lignes (≈5.6 kB)
 // Utilisé uniquement pour convolution séparable
 //static uint16_t row_buf[KERNEL_SIZE_9][JDIM];
-static uint16_t row_buf[KERNEL_SIZE][JDIM];
+static uint8_t row_buf[KERNEL_SIZE][JDIM];
 
 // --- Calcul traitement d'images ---
 void hist_cum(uint32_t *histo, uint8_t *img){
@@ -150,7 +150,7 @@ static void gaussian15_vertical_from_rows_8bits(uint8_t *out_line, uint16_t rows
     }
 }
 
-static void gaussian15_horizontal_line_8bits_opti(uint16_t *out, const uint8_t *in_line, int jdim)
+static void gaussian15_horizontal_line_8bits_opti(uint8_t *out, const uint8_t *in_line, int jdim)
 {
     for (int j = 0; j <= jdim - KERNEL_SIZE; j++) {
         uint32_t acc = 0;
@@ -170,11 +170,11 @@ static void gaussian15_horizontal_line_8bits_opti(uint16_t *out, const uint8_t *
         acc +=  4 * in_line[j + 13];
         acc +=  2 * in_line[j + 14];
 
-        out[j] = (uint16_t)acc;
+        out[j] = (uint8_t)(acc >> 8);
     }
 }
 
-static void gaussian15_vertical_from_rows_8bits_opti(uint8_t *out_line, uint16_t rows[KERNEL_SIZE][JDIM], int ind_ker, int idim, int jdim)
+static void gaussian15_vertical_from_rows_8bits_opti(uint8_t *out_line, uint8_t rows[KERNEL_SIZE][JDIM], int ind_ker, int idim, int jdim)
 {
     for (int j = 0; j <= jdim - KERNEL_SIZE; j++) {
         uint32_t acc = 0;
@@ -194,7 +194,7 @@ static void gaussian15_vertical_from_rows_8bits_opti(uint8_t *out_line, uint16_t
         acc +=  4 * rows[( 13 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
         acc +=  2 * rows[( 14 + ind_ker + KERNEL_SIZE) % KERNEL_SIZE ][j];
 
-        out_line[j] = (uint8_t)(acc >> 16);
+        out_line[j] = (uint8_t)(acc >> 8);
     }
 
     for (int j = jdim - KERNEL_SIZE + 1; j < jdim; j++) {
@@ -202,6 +202,7 @@ static void gaussian15_vertical_from_rows_8bits_opti(uint8_t *out_line, uint16_t
     }
 }
 
+/* sigma = 4 */
 void gaussian_blur_15x15_stream_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim)
 {
     /* Préchargement exact des KERNEL_SIZE premières lignes */
@@ -240,7 +241,77 @@ void gaussian_blur_15x15_stream_8bits(uint8_t *out, const uint8_t *in, int idim,
     }
 }
 
-static void gaussian7_horizontal_line_8bits_opti(uint16_t *out, const uint8_t *in_line, int jdim)
+/* sigma = 3 */
+static void gaussian9_horizontal_line_8bits_opti(uint8_t *out, const uint8_t *in_line, int jdim)
+{
+    for (int j = 0; j <= jdim - 9; j++) {
+        uint32_t acc = 0;
+        acc +=  8 * in_line[j +  0];
+        acc += 18 * in_line[j +  1];
+        acc += 32 * in_line[j +  2];
+        acc += 45 * in_line[j +  3];
+        acc += 50 * in_line[j +  4];
+        acc += 45 * in_line[j +  5];
+        acc += 32 * in_line[j +  6];
+        acc += 18 * in_line[j +  7];
+        acc +=  8 * in_line[j +  8];
+
+        out[j] = (uint16_t)(acc >> 8);
+    }
+}
+
+/* sigma = 3 */
+static void gaussian9_vertical_from_rows_8bits_opti(uint8_t *out_line, uint8_t rows[KERNEL_SIZE][JDIM], int ind_ker, int idim, int jdim)
+{
+    for (int j = 0; j <= jdim - 9; j++) {
+        uint32_t acc = 0;
+        acc +=  8 * rows[( ind_ker + 9) % 9 ][j];
+        acc += 18 * rows[( 1 + ind_ker + 9) % 9 ][j];
+        acc += 32 * rows[( 2 + ind_ker + 9) % 9 ][j];
+        acc += 45 * rows[( 3 + ind_ker + 9) % 9 ][j];
+        acc += 50 * rows[( 4 + ind_ker + 9) % 9 ][j];
+        acc += 45 * rows[( 5 + ind_ker + 9) % 9 ][j];
+        acc += 32 * rows[( 6 + ind_ker + 9) % 9 ][j];
+        acc += 18 * rows[( 7 + ind_ker + 9) % 9 ][j];
+        acc +=  8 * rows[( 8 + ind_ker + 9) % 9 ][j];
+
+        out_line[j] = (uint8_t)(acc >> 8);
+    }
+
+    for (int j = jdim - 9 + 1; j < jdim; j++) {
+        out_line[j] = 0;
+    }
+}
+
+/* sigma = 3 */
+void gaussian_blur_9x9_stream_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim)
+{
+    /* Préchargement exact des 7 premières lignes */
+    for (int k = 0; k < 9; k++) {
+        gaussian9_horizontal_line_8bits_opti(row_buf[k], &in[k * jdim], jdim);
+    }
+
+    int ind_ker = 0;
+
+    /* Boucle principale — uniquement zone valide */
+    for (int i = 0; i <= idim - 9; i++) {
+        gaussian9_vertical_from_rows_8bits_opti(&out[i * jdim], row_buf, ind_ker, idim, jdim);
+        /* Charger la prochaine ligne exacte */
+        if (i + 9 < idim) {
+            gaussian9_horizontal_line_8bits_opti(row_buf[ind_ker],  &in[(i + 9) * jdim], jdim);
+        }
+
+        ind_ker = (ind_ker + 1) % 9;
+    }
+    for (int i = idim - 9 + 1; i < idim; i++) {
+        for (int j = 0; j < jdim; j++) {
+            out[i * jdim + j] = 0;
+        }
+    }
+}
+
+/* sigma = 2 */
+static void gaussian7_horizontal_line_8bits_opti(uint8_t *out, const uint8_t *in_line, int jdim)
 {
     for (int j = 0; j <= jdim - 7; j++) {
         uint32_t acc = 0;
@@ -252,11 +323,12 @@ static void gaussian7_horizontal_line_8bits_opti(uint16_t *out, const uint8_t *i
         acc += 27 * in_line[j +  5];
         acc +=  8 * in_line[j +  6];
 
-        out[j] = (uint16_t)acc;
+        out[j] = (uint16_t)(acc >> 8);
     }
 }
 
-static void gaussian7_vertical_from_rows_8bits_opti(uint8_t *out_line, uint16_t rows[KERNEL_SIZE][JDIM], int ind_ker, int idim, int jdim)
+/* sigma = 2 */
+static void gaussian7_vertical_from_rows_8bits_opti(uint8_t *out_line, uint8_t rows[KERNEL_SIZE][JDIM], int ind_ker, int idim, int jdim)
 {
     for (int j = 0; j <= jdim - 7; j++) {
         uint32_t acc = 0;
@@ -268,7 +340,7 @@ static void gaussian7_vertical_from_rows_8bits_opti(uint8_t *out_line, uint16_t 
         acc += 27 * rows[( 5 + ind_ker + 7) % 7 ][j];
         acc +=  8 * rows[( 6 + ind_ker + 7) % 7 ][j];
 
-        out_line[j] = (uint8_t)(acc >> 16);
+        out_line[j] = (uint8_t)(acc >> 8);
     }
 
     for (int j = jdim - 7 + 1; j < jdim; j++) {
@@ -276,6 +348,7 @@ static void gaussian7_vertical_from_rows_8bits_opti(uint8_t *out_line, uint16_t 
     }
 }
 
+/* sigma = 2 */
 void gaussian_blur_7x7_stream_8bits(uint8_t *out, const uint8_t *in, int idim, int jdim)
 {
     /* Préchargement exact des 7 premières lignes */
@@ -470,6 +543,59 @@ void red_image(uint8_t *out, const uint8_t *in)
     }
   }
 }
+
+
+void gaussian_blur_15x15_stream_8bits_band(
+    uint8_t *out, const uint8_t *in,
+    int idim, int jdim,
+    int i_start, int i_end,
+    uint8_t row_buf[KERNEL_SIZE][JDIM])
+{
+    int preload_start = i_start;
+    int preload_end   = i_start + KERNEL_SIZE - 1;
+
+    // --- Préchargement exact ---
+    for (int k = 0; k < KERNEL_SIZE; k++) {
+        int src_i = preload_start + k;
+        if (src_i < idim) {
+            gaussian15_horizontal_line_8bits_opti(
+                row_buf[k],
+                &in[src_i * jdim],
+                jdim
+            );
+        } else {
+            memset(row_buf[k], 0, jdim * sizeof(uint16_t));
+        }
+    }
+
+    int ind_ker = 0;
+
+    // --- Boucle principale ---
+    for (int i = i_start; i <= i_end; i++) {
+
+        gaussian15_vertical_from_rows_8bits_opti(
+            &out[i * jdim],
+            row_buf,
+            ind_ker,
+            idim,
+            jdim
+        );
+
+        int next_line = i + KERNEL_SIZE;
+        if (next_line < idim) {
+            gaussian15_horizontal_line_8bits_opti(
+                row_buf[ind_ker],
+                &in[next_line * jdim],
+                jdim
+            );
+        } else {
+            memset(row_buf[ind_ker], 0, jdim * sizeof(uint16_t));
+        }
+
+        ind_ker = (ind_ker + 1) % KERNEL_SIZE;
+    }
+}
+
 
 // --- I/O / debug ---
 void send_image(uint8_t *img)

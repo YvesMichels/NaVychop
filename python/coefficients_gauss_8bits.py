@@ -1,8 +1,8 @@
 import numpy as np 
 import matplotlib.pyplot as plt
 
-x = np.array(range(-3, 4))
-sigma = 2
+x = np.array(range(-4, 5))
+sigma = 3
 
 fig, ax = plt.subplots()
 y = np.exp(-(np.multiply(x,x)/(sigma*sigma)))

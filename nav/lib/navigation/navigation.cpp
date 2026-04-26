@@ -34,6 +34,17 @@ void computeRotationMatrix(float w, float x, float y, float z, float R[3][3]) {
   R[2][2] = 1.0f - 2.0f * (x * x + y * y);
 }
 
+void rotMult(float R_A_T[3][3], float R_A_M[3][3], float R_M_T[3][3]) {
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            R_A_T[i][j] = 0.0f;
+            for (int k = 0; k < 3; k++) {
+                R_A_T[i][j] += R_A_M[i][k] * R_M_T[k][j];
+            }
+        }
+    }
+}
+
 Quaternion qNormalize(const Quaternion &q) {
   float n = sqrtf(q.w*q.w + q.x*q.x + q.y*q.y + q.z*q.z);
   if (n <= 0.0f) return {1,0,0,0};
@@ -92,17 +103,102 @@ void qToEulerXYZ(const Quaternion &q, float &rx, float &ry, float &rz) {
   }
 }
 
-// --- CRC8 standard (polynôme 0x07) ---
-uint8_t crc8(const uint8_t* data, size_t len) {
-  uint8_t crc = 0x00;
-  for (size_t i = 0; i < len; i++) {
-    crc ^= data[i];
-    for (uint8_t b = 0; b < 8; b++) {
-      if (crc & 0x80)
-        crc = (crc << 1) ^ 0x07;
-      else
-        crc <<= 1;
+float computePitchCommandSignal(float R[3][3], float pitch_cmd) {
+    // projection de y_avion dans le plan horizontal
+    float y_sol[2] = {R[0][1], R[1][1]};
+
+    float norm = sqrtf(y_sol[0]*y_sol[0] + y_sol[1]*y_sol[1]);
+    if (norm< 1e-6f) return 0.0f;
+
+    // direction latérale horizontale
+    y_sol[0] /= norm;
+    y_sol[1] /= norm;
+
+    // composante verticale
+    float z = R[2][1];
+
+    //  cos(roll_mesuré) ≈ norme projection horizontale
+    float y = norm;
+
+    // cible
+    float y_target = cosf(pitch_cmd);
+    float z_target = sinf(pitch_cmd);
+
+    float cross = y * z_target - z * y_target;
+    float dot   = y * y_target + z * z_target;
+
+    if (dot < 0.0f) {
+        return (cross > 0.0f) ? 1.0f : -1.0f;
     }
-  }
-  return crc;
+
+    return cross;
+}
+
+float computeRollCommandSignal(float R[3][3], float roll_cmd) {
+  // Construction X_sol
+    float x_sol[2] = {R[0][0], R[1][0]};
+    float norm = sqrtf(x_sol[0]*x_sol[0] + x_sol[1]*x_sol[1]);
+
+    if (norm < 1e-6f) return 0.0f;
+
+    // direction avant horizontale
+    x_sol[0] /= norm;
+    x_sol[1] /= norm;
+
+    // Projection axe avion sur Z
+    float z = R[2][0];
+
+    // cos(pitch_mesuré) ≈ norme projection horizontale
+    float x = norm;
+
+    // cible
+    float x_target = cosf(roll_cmd);
+    float z_target = sinf(roll_cmd);
+
+    float cross = x * z_target - z * x_target;
+    float dot   = x * x_target + z * z_target;
+
+    if (dot < 0.0f) {
+        return (cross > 0.0f) ? 1.0f : -1.0f;
+    }
+
+    return cross;
+}
+
+
+void computeTargetVector(float yaw_cmd, float x_target[2]) {
+    // yaw_cmd en radians, 0 = Nord, pi/2 = Est
+
+    x_target[0] = sinf(yaw_cmd); // composante X (Est)
+    x_target[1] = cosf(yaw_cmd); // composante Y (Nord)
+}
+
+void getForwardHorizontal(float R[3][3], float xh[2]) {
+    xh[0] = R[0][0]; // X terre
+    xh[1] = R[1][0]; // Y terre
+
+    // Normalisation (important si pitch non nul)
+    float norm = sqrtf(xh[0]*xh[0] + xh[1]*xh[1]);
+    if (norm > 1e-6f) {
+        xh[0] /= norm;
+        xh[1] /= norm;
+    }
+}
+
+float computeYawCommandSignalImproved(float R[3][3], float yaw_cmd) {
+    float x_target[2];
+    computeTargetVector(yaw_cmd, x_target);
+
+    float xh[2];
+    getForwardHorizontal(R, xh);
+
+    float dot   = xh[0]*x_target[0] + xh[1]*x_target[1];
+    float cross = xh[0]*x_target[1] - xh[1]*x_target[0];
+
+    // Si erreur > 90°, on force une commande forte
+    if (dot < 0.0f) {
+        return (cross > 0.0f) ? 1.0f : -1.0f;
+    }
+
+    return cross;
 }

@@ -1,8 +1,9 @@
 #ifndef COMMUNICATION_H
 #define COMMUNICATION_H
 
-#include <cstdint>
+#include <Arduino.h>
 #include "config.h"
+
 #define binpt_yaw 8 // mise à l'échelle yaw (puissance de 2 car quantification en virgule fixe)
 #define binpt_pitch 4 // mise à l'échelle pitch (puissance de 2 car quantification en virgule fixe)
 #define binpt_roll 4 // mise à l'échelle roll (puissance de 2 car quantification en virgule fixe)
@@ -10,11 +11,13 @@
 #define size_buffer_delta 4950 // taille du buffer de données à envoyer au sol
 
 void quantif_angle(int16_t* delta_angle, float angle, int16_t* last_angle, uint8_t nbits, uint8_t binpt);
+ 
+void send_quaternions_and_logs(float *q_grv, float *q_rv, int16_t *logs);
 
-void init_angles(float roll, float pitch, float yaw, int16_t* first_angle, int16_t* last_angle);
+bool lora_check_and_echo();
 
-void write_fifo_d_angles(int8_t (*buffer_d_angles)[size_buffer_delta], float roll, float pitch, float yaw, int16_t* last_angle, uint16_t* ind_fifo_data);
+uint8_t crc8(const uint8_t* data, size_t len);
 
-void send_fifo_d_angles(int16_t first_angle[3], int8_t (*buffer_d_angles)[size_buffer_delta], uint16_t* ind_rd_fifo_data, uint16_t ind_pkt);
-                         
+void motors_control(int8_t servo1, int8_t servo2, int8_t servo3, int8_t servo4, int8_t esc);
+
 #endif

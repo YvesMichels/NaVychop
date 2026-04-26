@@ -1,0 +1,57 @@
+** Drc report for navychop.kicad_pcb **
+** Created on 2026-02-22T15:58:19+0100 **
+
+** Found 15 DRC violations **
+[starved_thermal]: Connexion de frein thermique à la zone incomplète (couche B.Cu ; zone nbre min de rayons 2 ; réel 1)
+    Forçage local; error
+    @(115,0000 mm, 164,0000 mm): Zone [GND] sur B.Cu, priorité 0
+    @(139,5300 mm, 144,1550 mm): Pad métallisé 2 [GND] de R4
+[starved_thermal]: Connexion de frein thermique à la zone incomplète (couche B.Cu ; 2 rayons connectés à des ilots isolés)
+    Forçage local; error
+    @(115,0000 mm, 164,0000 mm): Zone [GND] sur B.Cu, priorité 0
+    @(139,4000 mm, 140,0650 mm): Pad métallisé 2 [GND] de R3
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(139,1500 mm, 154,2300 mm): Cercle de SX1278 sur F.Silkscreen
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(141,6900 mm, 156,7700 mm): Rectangle de SX1278 sur F.Silkscreen
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(146,7700 mm, 156,7700 mm): Rectangle de SX1278 sur F.Silkscreen
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(145,8100 mm, 135,6450 mm): Rectangle de BMP390 sur F.Silkscreen
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(122,1000 mm, 159,1350 mm): Rectangle de BNO085 sur F.Silkscreen
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(122,1100 mm, 105,7700 mm): Rectangle de N8M1 sur B.Silkscreen
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(136,5000 mm, 118,2500 mm): Champ référence de C1
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(128,5400 mm, 161,4650 mm): Rectangle de ESP32_vision1 sur B.Silkscreen
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(139,9400 mm, 150,0350 mm): Rectangle de ESP32_vision1 sur B.Silkscreen
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(142,3700 mm, 141,1100 mm): Rectangle de ESP32_vision1 sur B.Silkscreen
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(146,3200 mm, 136,0650 mm): Rectangle de ESP32_vision1 sur B.Silkscreen
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(146,3200 mm, 157,3350 mm): Rectangle de ESP32_vision1 sur B.Silkscreen
+[silk_over_copper]: Sérigraphie tronquée par masque de soudure
+    Forçage local; warning
+    @(137,4000 mm, 145,7650 mm): Cercle de ESP32_vision1 sur B.Silkscreen
+
+** Found 0 unconnected pads **
+
+** Found 0 Footprint errors **
+
+** End of Report **

@@ -1,6 +1,13 @@
 #include <Arduino.h>
 #include <LoRa.h>
-#include "communication.h"
+#include "config.h"
+
+#define SYNC_1 0xAA
+#define SYNC_2 0x55
+#define SYNC_3 0xCC
+#define SYNC_4 0x33
+#define TRANSFORM_FORMAT 0x42
+#define QUATERNION_FORMAT 0x51
 
 void quantif_angle(int8_t* delta_angle, float angle, int16_t* last_angle, uint8_t nbits, uint8_t binpt) {
     int16_t buffer;
@@ -18,77 +25,113 @@ void quantif_angle(int8_t* delta_angle, float angle, int16_t* last_angle, uint8_
     return;
 }
 
-void init_angles(float roll, float pitch, float yaw, int16_t* first_angle, int16_t* last_angle) {
-    last_angle[0] = 0;
-    last_angle[1] = 0;
-    last_angle[2] = 0;
-    first_angle[0] = (int16_t)(yaw * 8);
-    first_angle[1] = (int16_t)(pitch * 2);
-    first_angle[2] = (int16_t)(roll * 2);
-    return;
-}
-void write_fifo_d_angles(int8_t (*buffer_d_angles)[size_buffer_delta], float roll, float pitch, float yaw, int16_t* last_angle, uint16_t* ind_fifo_data) 
-{
-    quantif_angle(&buffer_d_angles[0][*ind_fifo_data], yaw, &last_angle[0], 6, binpt_yaw);
-    quantif_angle(&buffer_d_angles[1][*ind_fifo_data], pitch, &last_angle[1], 5, binpt_pitch);
-    quantif_angle(&buffer_d_angles[2][*ind_fifo_data], roll, &last_angle[2], 5, binpt_roll);
-
-    // Incrémenter l’indice FIFO (si tu veux faire défiler la mémoire circulaire)
-    (*ind_fifo_data)++;
-    if (*ind_fifo_data >= size_buffer_delta) {
-    *ind_fifo_data = 0;
-    }
-    return;
+static inline int16_t float_to_q16(float x) {
+    if (x >  0.999984f) x =  0.999984f;
+    if (x < -1.0f)      x = -1.0f;
+    return (int16_t)(x * 32767.0f);
 }
 
-void send_fifo_d_angles(int16_t first_angle[3], int8_t (*buffer_d_angles)[size_buffer_delta], uint16_t* ind_rd_fifo_data, uint16_t ind_pkt)
+
+void send_quaternions_and_logs(float *q_grv, float *q_rv, int16_t *logs)
 {
-    uint16_t word16;
-    uint32_t word32; 
-    int16_t yaw_q;
-    int16_t roll_q;
-    int16_t pitch_q;
-    uint16_t roll_u;
-    uint16_t pitch_u;
-    uint16_t yaw_u;
+    uint8_t buffer[54];
+    uint8_t checksum = 0;
+    uint8_t *ptr = buffer;
 
-    LoRa.beginPacket();
-    // envoi de l'inndice du paquet
-    LoRa.write((uint8_t)(ind_pkt >> 8));   // octet haut
-    LoRa.write((uint8_t)(ind_pkt & 0xFF)); // octet bas
+    // --- Synchronisation ---
+    *ptr++ = SYNC_1; checksum ^= SYNC_1;
+    *ptr++ = SYNC_2; checksum ^= SYNC_2;
+    *ptr++ = SYNC_3; checksum ^= SYNC_3;
+    *ptr++ = SYNC_4; checksum ^= SYNC_4;
 
-    // Construction du mot 16 bits : [yaw:12 | pitch:10 | roll:10]
-    word32 = (first_angle[0] << 20) | (first_angle[1] << 10) | first_angle[2];
-    
-    LoRa.write((uint8_t)(word32 >> 24 & 0xFF));   // octet 3 (haut)
-    LoRa.write((uint8_t)(word32 >> 16 & 0xFF)); // octet 2
-    LoRa.write((uint8_t)(word32 >> 8 & 0xFF));   // octet 1
-    LoRa.write((uint8_t)(word32 & 0xFF)); // octet 0 (bas)
-    
-    for (uint16_t i = 0; i < (nb_compress-1); i++) {
-        // Récupère les valeurs dans la FIFO
-        roll_q  = buffer_d_angles[2][*ind_rd_fifo_data];
-        pitch_q = buffer_d_angles[1][*ind_rd_fifo_data];
-        yaw_q   = buffer_d_angles[0][*ind_rd_fifo_data];
+    // --- Format ---
+    *ptr++ = QUATERNION_FORMAT; checksum ^= QUATERNION_FORMAT;
 
-        // Mise à l’échelle pour rentrer dans les 6/5/5 bits
-        // On suppose ici que les valeurs sont déjà quantifiées dans les bons intervalles.
-        roll_u  = ((uint8_t)(roll_q  & 0x1F)) & 0x1F; // 5 bits
-        pitch_u = ((uint8_t)(pitch_q & 0x1F)) & 0x1F; // 5 bits
-        yaw_u   = ((uint8_t)(yaw_q   & 0x3F)) & 0x3F; // 6 bits
-
-        // Construction du mot 16 bits : [roll:6 | pitch:5 | yaw:5]
-        word16 = (yaw_u << 10) | (pitch_u << 5) | roll_u;
-
-        // Envoi via LoRa.write (MSB en premier)
-        LoRa.write((uint8_t)(word16 >> 8));   // octet haut
-        LoRa.write((uint8_t)(word16 & 0xFF)); // octet bas
-
-        // Avance l’indice FIFO circulaire
-        (*ind_rd_fifo_data)++;
-        if (*ind_rd_fifo_data >= size_buffer_delta)
-            *ind_rd_fifo_data = 0;
+    // --- Quaternion GAME_ROTATION_VECTOR ---
+    for (int i = 0; i < 4; i++) {
+        int16_t v = float_to_q16(q_grv[i]);
+        uint8_t b0 = v & 0xFF;
+        uint8_t b1 = (v >> 8) & 0xFF;
+        *ptr++ = b0; checksum ^= b0;
+        *ptr++ = b1; checksum ^= b1;
     }
-    LoRa.endPacket();
-    return;
+
+    // --- Quaternion ROTATION_VECTOR ---
+    for (int i = 0; i < 4; i++) {
+        int16_t v = float_to_q16(q_rv[i]);
+        uint8_t b0 = v & 0xFF;
+        uint8_t b1 = (v >> 8) & 0xFF;
+        *ptr++ = b0; checksum ^= b0;
+        *ptr++ = b1; checksum ^= b1;
+    }
+
+    // --- Logs (16 x 16 bits) ---
+    for (int i = 0; i < 16; i++) {
+        uint16_t v = (uint16_t)logs[i];
+        for (int j = 0; j < 2; j++) {
+            uint8_t b = (v >> (8*j)) & 0xFF;
+            *ptr++ = b;
+            checksum ^= b;
+        }
+    }
+
+    // --- Checksum ---
+    *ptr++ = checksum;
+
+    // --- Envoi ---
+    Serial.write(buffer, sizeof(buffer));
+
+    //LoRa.beginPacket();
+    //LoRa.write(buffer, sizeof(buffer));
+    //LoRa.endPacket();
+}
+
+bool lora_check_and_echo()
+{
+    int packetSize = LoRa.parsePacket();
+    if (packetSize == 2*sizeof(uint32_t)) {
+
+        uint32_t pkt[2];
+        LoRa.readBytes((uint8_t*)&pkt, sizeof(pkt));
+
+        // Echo immédiat
+        LoRa.beginPacket();
+        LoRa.write((uint8_t*)&pkt, sizeof(pkt));
+        LoRa.endPacket(true);   // async
+
+        return true;
+    }
+    return false;
+}
+
+// --- CRC8 standard (polynôme 0x07) ---
+uint8_t crc8(const uint8_t* data, size_t len) {
+  uint8_t crc = 0x00;
+  for (size_t i = 0; i < len; i++) {
+    crc ^= data[i];
+    for (uint8_t b = 0; b < 8; b++) {
+      if (crc & 0x80)
+        crc = (crc << 1) ^ 0x07;
+      else
+        crc <<= 1;
+    }
+  }
+  return crc;
+}
+
+void motors_control(int8_t servo1, int8_t servo2, int8_t servo3, int8_t servo4, int8_t esc)
+{
+    uint32_t servo_msg;
+    servo_msg =  (servo1 & 0x3F)
+             | ((servo2 & 0x3F) << 6)
+             | ((servo3 & 0x3F) << 12)
+             | ((servo4 & 0x3F) << 18)
+             | ((esc    & 0x3F) << 24);
+    uint8_t buffer_msg[6];
+    buffer_msg[0] = 0xFF;                          // start byte
+    memcpy(&buffer_msg[1], &servo_msg, 4);         // 4 octets de données
+    buffer_msg[5] = crc8(&buffer_msg[1], 4);       // CRC calculé sur les 4 octets
+
+    // Envoi de la trame moteur complète
+    Serial2.write(buffer_msg, sizeof(buffer_msg));
 }

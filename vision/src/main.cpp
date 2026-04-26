@@ -168,8 +168,6 @@ void setup() {
     // Création de la tâche Core 1, priorité 1, pinning Core 1
     gaussian_dual_core_init();
  
-
-    delay(1000);
     digitalWrite(LED_FLASH_PIN, HIGH);
     delay(5);
     digitalWrite(LED_FLASH_PIN, LOW);

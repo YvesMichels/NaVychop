@@ -40,6 +40,13 @@ typedef struct {
 #define LORA_RST   27
 #define LORA_DIO0  26
 #define LORA_FREQ 433E6   // adapter si besoin (433E6 ou 868E6)
+#define LORA_FRAME_SIZE 7 // 2 octest sync, 1 octet type, 3 octets data, 1 octet CRC
+
+uint8_t lora_rx_buffer[LORA_FRAME_SIZE];
+uint8_t lora_cmd[4];
+
+uint32_t last_lora_frame_ms = 0;
+bool lora_link_ok = false;
 
 SPIClass spiLoRa(VSPI);
 
@@ -220,9 +227,9 @@ void setup()
 
 void loop()
 {
-    float yaw;  // pour test à remplacer par produits scalaires
-    float pitch;// pour test à remplacer par produits scalaires
-    float roll; // pour test à remplacer par produits scalaires
+    float proj_yaw;  // produit scalaire : projection yaw sur commande yaw
+    float proj_pitch;// produit scalaire : projection pitch sur commande pitch
+    float proj_roll; // produit scalaire : projection roll sur commande roll
     float pressure, temp;
     float qw, qx, qy, qz;
     // --- BMP390 ---
@@ -252,22 +259,71 @@ void loop()
     computeRotationMatrix(q_M_GRV.w, q_M_GRV.x, q_M_GRV.y, q_M_GRV.z, R_M_GRV);
     rotMult(R_A_GRV, R_A_M, R_M_GRV);
 
-    // test control moteurs
-    computeEulerAngles(q_M_RV.w, q_M_RV.x, q_M_RV.y, q_M_RV.z, &roll, &pitch, &yaw); 
-    servo1 = max(0, min(63, (int)((roll)*50 + 32)));
-    servo2 = max(0, min(63, (int)((pitch)*100 + 32)));
-    servo3 = max(0, min(63, (int)((pitch)*100 + 32)));
-    servo4 = max(20, min(43, (int)((yaw)*0 + 32)));
-    esc = 0;
-    /*if(((t_cur-t_0)/250)<48){ 
-        esc = (t_cur-t_0)/250;
-    }
-    else
-    {
-        esc = 48 ;
-    }*/
+    // =============================
+    // Réception LoRa non bloquante
+    // =============================
 
-    motors_control(servo1, servo2, servo3, servo4, esc);
+    int packetSize = LoRa.parsePacket();
+
+    if (packetSize)
+    {
+        // Taille strictement attendue
+        if (packetSize == LORA_FRAME_SIZE)
+        {
+            // Lecture FIFO complète
+            for (int i = 0; i < LORA_FRAME_SIZE; i++)
+            {
+                lora_rx_buffer[i] = LoRa.read();
+            }
+
+            // Décodage protocole applicatif
+            if (decode_lora_frame_to_cmd(lora_rx_buffer, lora_cmd))
+            {
+                last_lora_frame_ms = millis();
+                lora_link_ok = true;
+
+                // =============================
+                // Exploitation commandes
+                // =============================
+
+                uint8_t type = lora_cmd[0];
+
+                switch(type)
+                {
+                    // Commande manuelle
+                    case 0x01:
+                    {
+                        Serial.print(lora_cmd[1]);
+                        Serial.print(" - ");
+                        Serial.print(lora_cmd[2]);
+                        Serial.print(" - ");
+                        Serial.println(lora_cmd[3]);
+
+                        break;
+                    }
+
+                    // Paramètres / config
+                    case 0x02:
+                    {
+                        // traitement futur
+                        break;
+                    }
+
+                    default:
+                        break;
+                }
+            }
+        }
+
+        // Vidage sécurité FIFO si taille incorrecte
+        while (LoRa.available())
+        {
+            LoRa.read();
+        }
+
+        // Retour immédiat RX
+        LoRa.receive();
+    }
 
     // --- Vision ---
     vision_frame_t vf;
@@ -288,9 +344,24 @@ void loop()
         logs[12] = (int16_t) (256*computePitchCommandSignal(R_A_RV, 0));
         logs[13] = (int16_t) (256*computeRollCommandSignal(R_A_RV, 0));
         logs[14] = (int16_t) (256*computeYawCommandSignalImproved(R_A_RV, 0));
-        send_quaternions_and_logs((float *)(&q_M_GRV), (float *)(&q_M_RV), logs);
+        //send_quaternions_and_logs((float *)(&q_M_GRV), (float *)(&q_M_RV), logs);
     }
-
+    proj_yaw = computeYawCommandSignalImproved(R_A_GRV, 0);  
+    proj_pitch = computePitchCommandSignal(R_A_GRV, 0);
+    proj_roll = computeRollCommandSignal(R_A_GRV, 0);
+    servo1 = max(0, min(63, (int)((proj_pitch)*100 + 32)));
+    servo2 = max(0, min(63, (int)((proj_roll)*100 + 32)));
+    servo3 = max(0, min(63, (int)((proj_roll)*100 + 32)));
+    servo4 = max(20, min(43, (int)((proj_yaw)*0 + 32)));
+    esc = 0;
+    /*if(((t_cur-t_0)/250)<48){ 
+        esc = (t_cur-t_0)/250;
+    }
+    else
+    {
+        esc = 48 ;
+    }*/
+    motors_control(servo1, servo2, servo3, servo4, esc);
 
     // gestion du temps
   t_target = t_target + d_t;

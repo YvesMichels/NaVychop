@@ -135,3 +135,26 @@ void motors_control(int8_t servo1, int8_t servo2, int8_t servo3, int8_t servo4, 
     // Envoi de la trame moteur complète
     Serial2.write(buffer_msg, sizeof(buffer_msg));
 }
+
+bool decode_lora_frame_to_cmd(uint8_t *rx_buffer, uint8_t *cmd)
+{
+    // cmd[0] = TYPE
+    // cmd[1..3] = DATA
+
+    if (rx_buffer[0] != SYNC_1 || rx_buffer[1] != SYNC_2)
+        return false;
+
+    uint8_t computed_crc = crc8(&rx_buffer[2], 4);
+
+    if (computed_crc != rx_buffer[6])
+        return false;
+
+    // Copie directe des 4 octets utiles
+    cmd[0] = rx_buffer[2];
+    cmd[1] = rx_buffer[3];
+    cmd[2] = rx_buffer[4];
+    cmd[3] = rx_buffer[5];
+
+    return true;
+}
+

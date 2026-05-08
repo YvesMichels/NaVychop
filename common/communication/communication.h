@@ -20,4 +20,6 @@ uint8_t crc8(const uint8_t* data, size_t len);
 
 void motors_control(int8_t servo1, int8_t servo2, int8_t servo3, int8_t servo4, int8_t esc);
 
+bool decode_lora_frame_to_cmd(uint8_t *rx_buffer, uint8_t *cmd);
+
 #endif

@@ -169,7 +169,7 @@ void loop()
     Serial.print(" ");
     Serial.println(data2);
 
-    throttle += 5;
+    throttle += 1;
 
-    delay(500);
+    delay(200);
 }

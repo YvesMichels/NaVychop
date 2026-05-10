@@ -9,6 +9,7 @@
 
 #include "navigation.h"
 #include "communication.h"
+#include "control.h"
 
 typedef struct {
     int32_t dummy;   // index 0 non utilisé ici
@@ -40,10 +41,8 @@ typedef struct {
 #define LORA_RST   27
 #define LORA_DIO0  26
 #define LORA_FREQ 433E6   // adapter si besoin (433E6 ou 868E6)
-#define LORA_FRAME_SIZE 7 // 2 octest sync, 1 octet type, 3 octets data, 1 octet CRC
 
-uint8_t lora_rx_buffer[LORA_FRAME_SIZE];
-uint8_t lora_cmd[4];
+uint8_t lora_cmd[4] = {1, 0, 127, 127};
 
 uint32_t last_lora_frame_ms = 0;
 bool lora_link_ok = false;
@@ -59,7 +58,7 @@ Adafruit_BNO08x bno08x;
 sh2_SensorValue_t sensorValue;
 
 // variables IMU
-long reportIntervalUs = 50000;  // période de raffraichissement de l'UMI 50ms = 20Hz
+long reportIntervalUs = 1000*d_t;  // période de raffraichissement de l'UMI
 Quaternion q_M_GRV;
 Quaternion q_M_RV;
 float R_M_RV[3][3]; // matrice de rotation de l'umu (M) par rapport à la terre hybridée magnéto
@@ -71,6 +70,10 @@ float R_A_M[3][3] = {
 };// matrice de rotation de l'avion (A) par rapport à l'IMU (M) (fixe, dépend du montage)
 float R_A_RV[3][3]; // matrice de rotation de l'avion (A) par rapport à la terre hybridée magnéto
 float R_A_GRV[3][3];// matrice de rotation de l'avion (A) par rapport à la terre sans magnéto
+
+// variables asservissement
+ControlGains control_gains;
+ControlState control_states; 
 
 // variables moteurs
 int8_t servo1 = 90;
@@ -211,6 +214,10 @@ void setup()
 
     Serial.println("LoRa ready");
     
+    // initialisation asservissement
+    control_gain_init(control_gains);
+    control_init(control_states);
+
     // synchronisation du module de vision et initialisation du temps
     delay(1000);
     pinMode(32, OUTPUT);
@@ -230,6 +237,10 @@ void loop()
     float proj_yaw;  // produit scalaire : projection yaw sur commande yaw
     float proj_pitch;// produit scalaire : projection pitch sur commande pitch
     float proj_roll; // produit scalaire : projection roll sur commande roll
+    float cmd_yaw;   // commande angulaire yaw (lacet)
+    float cmd_pitch; // commande angulaire pitch (tangage)
+    float cmd_roll;  // commande angulaire roll (roulis)
+
     float pressure, temp;
     float qw, qx, qy, qz;
     // --- BMP390 ---
@@ -259,71 +270,7 @@ void loop()
     computeRotationMatrix(q_M_GRV.w, q_M_GRV.x, q_M_GRV.y, q_M_GRV.z, R_M_GRV);
     rotMult(R_A_GRV, R_A_M, R_M_GRV);
 
-    // =============================
-    // Réception LoRa non bloquante
-    // =============================
-
-    int packetSize = LoRa.parsePacket();
-
-    if (packetSize)
-    {
-        // Taille strictement attendue
-        if (packetSize == LORA_FRAME_SIZE)
-        {
-            // Lecture FIFO complète
-            for (int i = 0; i < LORA_FRAME_SIZE; i++)
-            {
-                lora_rx_buffer[i] = LoRa.read();
-            }
-
-            // Décodage protocole applicatif
-            if (decode_lora_frame_to_cmd(lora_rx_buffer, lora_cmd))
-            {
-                last_lora_frame_ms = millis();
-                lora_link_ok = true;
-
-                // =============================
-                // Exploitation commandes
-                // =============================
-
-                uint8_t type = lora_cmd[0];
-
-                switch(type)
-                {
-                    // Commande manuelle
-                    case 0x01:
-                    {
-                        Serial.print(lora_cmd[1]);
-                        Serial.print(" - ");
-                        Serial.print(lora_cmd[2]);
-                        Serial.print(" - ");
-                        Serial.println(lora_cmd[3]);
-
-                        break;
-                    }
-
-                    // Paramètres / config
-                    case 0x02:
-                    {
-                        // traitement futur
-                        break;
-                    }
-
-                    default:
-                        break;
-                }
-            }
-        }
-
-        // Vidage sécurité FIFO si taille incorrecte
-        while (LoRa.available())
-        {
-            LoRa.read();
-        }
-
-        // Retour immédiat RX
-        LoRa.receive();
-    }
+    lora_check_cmd(lora_cmd);
 
     // --- Vision ---
     vision_frame_t vf;
@@ -346,13 +293,22 @@ void loop()
         logs[14] = (int16_t) (256*computeYawCommandSignalImproved(R_A_RV, 0));
         //send_quaternions_and_logs((float *)(&q_M_GRV), (float *)(&q_M_RV), logs);
     }
-    proj_yaw = computeYawCommandSignalImproved(R_A_GRV, 0);  
-    proj_pitch = computePitchCommandSignal(R_A_GRV, 0);
-    proj_roll = computeRollCommandSignal(R_A_GRV, 0);
-    servo1 = max(0, min(63, (int)((proj_pitch)*100 + 32)));
-    servo2 = max(0, min(63, (int)((proj_roll)*100 + 32)));
-    servo3 = max(0, min(63, (int)((proj_roll)*100 + 32)));
-    servo4 = max(20, min(43, (int)((proj_yaw)*0 + 32)));
+    
+    cmd_yaw = ((float)lora_cmd[2])*0.0245436921875; // entre -1 et 1 rad
+    cmd_pitch = (((float)lora_cmd[3])-127)/127; // entre -1 et 1 rad
+    cmd_roll = 0; // pas de roll autorisé dans un premier temps (asservissement en yaw en gardant l'avion à plat)
+
+    control_update_inner(control_states, control_gains, R_A_GRV, cmd_yaw, cmd_pitch, cmd_roll);
+
+    /*Serial.print(control_states.ctrl_yaw);
+    Serial.print(" - ");
+    Serial.print(control_states.ctrl_pitch);
+    Serial.print(" - ");
+    Serial.println(control_states.ctrl_roll);*/
+    servo1 = max(0, min(63, (int)((-control_states.ctrl_pitch) + 32)));
+    servo2 = max(0, min(63, (int)((-control_states.ctrl_roll) + 32)));
+    servo3 = max(0, min(63, (int)((-control_states.ctrl_roll) + 32)));
+    servo4 = max(20, min(43, (int)((-control_states.ctrl_yaw) + 32)));
     esc = 0;
     /*if(((t_cur-t_0)/250)<48){ 
         esc = (t_cur-t_0)/250;

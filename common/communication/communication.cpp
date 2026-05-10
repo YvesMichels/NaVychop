@@ -8,6 +8,8 @@
 #define SYNC_4 0x33
 #define TRANSFORM_FORMAT 0x42
 #define QUATERNION_FORMAT 0x51
+#define LORA_FRAME_SIZE 7 // 2 octest sync, 1 octet type, 3 octets data, 1 octet CRC
+
 
 void quantif_angle(int8_t* delta_angle, float angle, int16_t* last_angle, uint8_t nbits, uint8_t binpt) {
     int16_t buffer;
@@ -158,3 +160,65 @@ bool decode_lora_frame_to_cmd(uint8_t *rx_buffer, uint8_t *cmd)
     return true;
 }
 
+bool lora_check_cmd(uint8_t lora_cmd[4]){
+    // =============================
+    // Réception LoRa non bloquante
+    // =============================
+
+    uint8_t lora_rx_buffer[LORA_FRAME_SIZE];
+    int packetSize = LoRa.parsePacket();
+    bool msg_ok = false;
+
+    if (packetSize)
+    {
+        // Taille strictement attendue
+        if (packetSize == LORA_FRAME_SIZE)
+        {
+            // Lecture FIFO complète
+            for (int i = 0; i < LORA_FRAME_SIZE; i++)
+            {
+                lora_rx_buffer[i] = LoRa.read();
+            }
+
+            // Décodage protocole applicatif
+            if (decode_lora_frame_to_cmd(lora_rx_buffer, lora_cmd))
+            {
+                // =============================
+                // Exploitation commandes
+                // =============================
+
+                uint8_t type = lora_cmd[0];
+
+                switch(type)
+                {
+                    // Commande manuelle
+                    case 0x01:
+                    {
+                        msg_ok = true;
+                        break;
+                    }
+
+                    // Paramètres / config
+                    case 0x02:
+                    {
+                        // traitement futur
+                        break;
+                    }
+
+                    default:
+                        break;
+                }
+            }
+        }
+
+        // Vidage sécurité FIFO si taille incorrecte
+        while (LoRa.available())
+        {
+            LoRa.read();
+        }
+
+        // Retour immédiat RX
+        //LoRa.receive();
+    }
+    return msg_ok;
+}

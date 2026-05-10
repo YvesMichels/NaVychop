@@ -22,4 +22,6 @@ void motors_control(int8_t servo1, int8_t servo2, int8_t servo3, int8_t servo4, 
 
 bool decode_lora_frame_to_cmd(uint8_t *rx_buffer, uint8_t *cmd);
 
+bool lora_check_cmd(uint8_t *lora_cmd);
+
 #endif

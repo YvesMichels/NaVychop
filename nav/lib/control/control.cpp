@@ -1,148 +1,96 @@
-struct ControlGains {
-    float Kp_phi;
-    float Kd_phi;
-
-    float Kp_theta;
-    float Kd_theta;
-
-    float Kp_psi_ext;
-    float Ki_psi_ext;
-
-    float Kp_h_ext;
-    float Ki_h_ext;
-
-    float bias_adapt_rate;   // epsilon
-};
-
-struct ControlState {
-    // Integrateurs externes
-    float eta_psi;
-    float eta_h;
-
-    // Estimateur biais lent
-    float bias_phi;
-    float bias_theta;
-
-    // Valeurs précédentes
-    float x_prev[3];
-};
+#include "navigation.h"
+#include "control.h"
+#include "config.h"
 
 void control_init(ControlState &state)
 {
-    state.eta_psi = 0.0f;
-    state.eta_h   = 0.0f;
+    // Integrateurs 
+    state.eta_yaw = 0;
+    state.eta_pitch = 0;
+    state.eta_roll = 0;
 
-    state.bias_phi   = 0.0f;
-    state.bias_theta = 0.0f;
+    // Estimateur biais lent
+    state.bias_roll = 0;
 
-    state.x_prev[0] = 1.0f;
-    state.x_prev[1] = 0.0f;
-    state.x_prev[2] = 0.0f;
+    // Valeurs précédentes
+    state.old_yaw = 0;
+    state.old_pitch = 0;
+    state.old_roll = 0;
+
+    state.ctrl_yaw = 0;
+    state.ctrl_pitch = 0;
+    state.ctrl_roll = 0;
+
+    state.init = 1;
 }
 
-void control_update_outer(
-    ControlState &state,
-    const ControlGains &gains,
-    float e_psi,
-    float e_h,
-    float dt_ext,
-    float &s_phi_ref,
-    float &s_theta_ref)
+void control_gain_init(ControlGains &gains)
 {
-    // Intégrateurs navigation
-    state.eta_psi += e_psi * dt_ext;
-    state.eta_h   += e_h   * dt_ext;
+    gains.Kp_yaw = def_kp_yaw;
+    gains.Ki_yaw = def_ki_yaw;
+    gains.Kd_yaw = def_kd_yaw;
 
-    s_phi_ref =
-        gains.Kp_psi_ext * e_psi +
-        gains.Ki_psi_ext * state.eta_psi;
+    gains.Kp_pitch = def_kp_pitch;
+    gains.Ki_pitch = def_ki_pitch;
+    gains.Kd_pitch = def_kd_pitch;
 
-    s_theta_ref =
-        gains.Kp_h_ext * e_h +
-        gains.Ki_h_ext * state.eta_h;
+    gains.Kp_roll = def_kp_roll;
+    gains.Ki_roll = def_ki_roll;
+    gains.Kd_roll = def_kd_roll;
+
+    gains.bias_roll = 0.0f;   // biais sur le roll : commande pour vol droit sans perturbations
 }
 
-void control_update_inner(
-    ControlState &state,
-    const ControlGains &gains,
-    const float R[3][3],      // matrice rotation
-    float p,                  // gyro x
-    float q,                  // gyro y
-    float s_phi_ref,
-    float s_theta_ref,
-    float dt,
-    float &delta_a,
-    float &delta_e)
+inline void bound_integrator(float &value, float max_value)
 {
-    // z_t = [0 0 1]
-    float s_theta = R[2][0];  // x · z_t
-    float s_phi   = R[2][1];  // y · z_t
-
-    float e_phi   = s_phi_ref   - s_phi;
-    float e_theta = s_theta_ref - s_theta;
-
-    // Loi PD + biais
-    delta_a =
-        gains.Kp_phi * e_phi
-        - gains.Kd_phi * p
-        + state.bias_phi;
-
-    delta_e =
-        gains.Kp_theta * e_theta
-        - gains.Kd_theta * q
-        + state.bias_theta;
-
-    // Saturation (exemple)
-    const float max_cmd = 1.0f;
-
-    bool sat_phi = false;
-    bool sat_theta = false;
-
-    if (delta_a > max_cmd) {
-        delta_a = max_cmd;
-        sat_phi = true;
+    if(value > max_value)
+    {
+        value = max_value;
     }
-    if (delta_a < -max_cmd) {
-        delta_a = -max_cmd;
-        sat_phi = true;
-    }
-
-    if (delta_e > max_cmd) {
-        delta_e = max_cmd;
-        sat_theta = true;
-    }
-    if (delta_e < -max_cmd) {
-        delta_e = -max_cmd;
-        sat_theta = true;
-    }
-
-    // Adaptation biais lente (anti-windup)
-    if (!sat_phi) {
-        state.bias_phi += gains.bias_adapt_rate * e_phi * dt;
-    }
-
-    if (!sat_theta) {
-        state.bias_theta += gains.bias_adapt_rate * e_theta * dt;
+    else if(value < -max_value)
+    {
+        value = -max_value;
     }
 }
 
-float estimate_yaw_rate(
-    ControlState &state,
-    const float R[3][3],
-    float dt)
+void control_update_inner(ControlState &state, ControlGains &gains, float R_A_T[3][3], float cmd_yaw, float cmd_pitch, float cmd_roll)
 {
-    float x_curr[3] = { R[0][0], R[1][0], R[2][0] };
+    float proj_yaw;
+    float proj_pitch;
+    float proj_roll;
 
-    float cross_z =
-        state.x_prev[0] * x_curr[1] -
-        state.x_prev[1] * x_curr[0];
+    proj_yaw = computeYawCommandSignalImproved(R_A_T, cmd_yaw);  
+    proj_pitch = computePitchCommandSignal(R_A_T, cmd_pitch); //comande test à +- 1 rad
+    proj_roll = computeRollCommandSignal(R_A_T, cmd_roll);
 
-    float yaw_rate = cross_z / dt;
+    state.eta_yaw += proj_yaw * d_t;
+    bound_integrator(state.eta_yaw, def_max_eta_yaw);
 
-    // sauvegarde
-    state.x_prev[0] = x_curr[0];
-    state.x_prev[1] = x_curr[1];
-    state.x_prev[2] = x_curr[2];
+    state.eta_pitch += proj_pitch * d_t;
+    bound_integrator(state.eta_pitch, def_max_eta_pitch);
 
-    return yaw_rate;
+    state.eta_roll += proj_roll * d_t;
+    bound_integrator(state.eta_roll, def_max_eta_roll);
+
+
+    // controle PI
+    state.ctrl_yaw = proj_yaw*gains.Kp_yaw + state.eta_yaw*gains.Ki_yaw;
+    state.ctrl_pitch = proj_pitch*gains.Kp_pitch + state.eta_pitch*gains.Ki_pitch;
+    state.ctrl_roll = proj_roll*gains.Kp_roll + state.eta_roll*gains.Ki_roll;
+
+    // control dérivée si init passée
+    if(state.init == 0){
+       state.ctrl_yaw += (proj_yaw - state.old_yaw)*gains.Kd_yaw/d_t;
+       state.ctrl_pitch += (proj_pitch - state.old_pitch)*gains.Kd_pitch/d_t;
+       state.ctrl_roll += (proj_roll - state.old_roll)*gains.Kd_roll/d_t;
+    } 
+    else{
+        state.init = 0;
+    }
+
+    // mise à jour pour la prochaine dérivée
+    state.old_yaw = proj_yaw;
+    state.old_pitch = proj_pitch;
+    state.old_roll = proj_roll;
+
 }

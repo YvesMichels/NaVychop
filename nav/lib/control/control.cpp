@@ -1,6 +1,7 @@
 #include "navigation.h"
 #include "control.h"
 #include "config.h"
+#include "default_parameters.h"
 
 void control_init(ControlState &state)
 {
@@ -24,7 +25,7 @@ void control_init(ControlState &state)
     state.init = 1;
 }
 
-void control_gain_init(ControlGains &gains)
+void control_gain_init(ControlParameters &gains)
 {
     gains.Kp_yaw = def_kp_yaw;
     gains.Ki_yaw = def_ki_yaw;
@@ -53,7 +54,7 @@ inline void bound_integrator(float &value, float max_value)
     }
 }
 
-void control_update_inner(ControlState &state, ControlGains &gains, float R_A_T[3][3], float cmd_yaw, float cmd_pitch, float cmd_roll)
+void control_update_inner(ControlState &state, ControlParameters &gains, float R_A_T[3][3], float cmd_yaw, float cmd_pitch, float cmd_roll)
 {
     float proj_yaw;
     float proj_pitch;

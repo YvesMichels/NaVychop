@@ -7,6 +7,7 @@
 #include <SPI.h>
 #include <LoRa.h>
 
+#include "config.h"
 #include "navigation.h"
 #include "communication.h"
 #include "control.h"
@@ -27,19 +28,6 @@ typedef struct {
 } vision_frame_t;
 
 
-#define SYNC_1 0xAA
-#define SYNC_2 0x55
-#define SYNC_3 0xCC
-#define SYNC_4 0x33
-#define TRANSFORM_FORMAT 0x42
-#define VISION_FRAME_SIZE 76
-
-#define LORA_SCK   18
-#define LORA_MISO  19
-#define LORA_MOSI  23
-#define LORA_SS    5
-#define LORA_RST   27
-#define LORA_DIO0  26
 #define LORA_FREQ 433E6   // adapter si besoin (433E6 ou 868E6)
 
 uint8_t lora_cmd[4] = {1, 0, 127, 127};
@@ -71,8 +59,12 @@ float R_A_M[3][3] = {
 float R_A_RV[3][3]; // matrice de rotation de l'avion (A) par rapport à la terre hybridée magnéto
 float R_A_GRV[3][3];// matrice de rotation de l'avion (A) par rapport à la terre sans magnéto
 
+// variables altitude
+AttitudeParameters att_param;
+AttitudeState att_states;
+
 // variables asservissement
-ControlGains control_gains;
+ControlParameters control_param;
 ControlState control_states; 
 
 // variables moteurs
@@ -145,17 +137,17 @@ void setup()
     // UART instrumentation
     Serial.begin(115200);
     // UART vision
-    Serial1.begin(115200, SERIAL_8N1, 25, -1);
+    Serial1.begin(115200, SERIAL_8N1, SERIAL_VISION, -1);
     // UART commandes moteurs
-    Serial2.begin(19200, SERIAL_8N1, -1, 17);
-    delay(500);
+    Serial2.begin(19200, SERIAL_8N1, -1, SERIAL_MOTORS);
+    delay(50);
 
     // I2C
-    Wire.begin(21, 22);
+    Wire.begin(I2C_SDA, I2C_SCL);
 
 
     // BMP390
-    if (!bmp.begin_I2C(0x76)) {
+    if (!bmp.begin_I2C(I2C_ID_BMP)) {
         Serial.println("BMP390 NOT FOUND");
         while (1);
     }
@@ -163,7 +155,7 @@ void setup()
     bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_2X);
 
     // BNO085
-    if (!bno08x.begin_I2C(0x4B)) {
+    if (!bno08x.begin_I2C(I2C_ID_BNO)) {
         Serial.println("BNO085 NOT FOUND");
         while (1);
     }
@@ -214,12 +206,20 @@ void setup()
 
     Serial.println("LoRa ready");
     
+    delay(1000);
+    // initialisation altitude
+    attitude_init(&att_states, &att_param);
+    if (bmp.performReading()) {
+        estimateAltitude(&att_states, &att_param, bmp.pressure, bmp.temperature, 0); // purge la mémoire du bmp390
+    }
+
+
     // initialisation asservissement
-    control_gain_init(control_gains);
+    control_gain_init(control_param);
     control_init(control_states);
 
     // synchronisation du module de vision et initialisation du temps
-    delay(1000);
+    
     pinMode(32, OUTPUT);
     digitalWrite(32, HIGH);
     delay(500);
@@ -237,6 +237,9 @@ void loop()
     float proj_yaw;  // produit scalaire : projection yaw sur commande yaw
     float proj_pitch;// produit scalaire : projection pitch sur commande pitch
     float proj_roll; // produit scalaire : projection roll sur commande roll
+    float yaw_ref = 0.0;   // yaw de référence (calibration au démmarage ou sur demande)
+    float pitch_ref = 0.0;   // yaw de référence (calibration au démmarage ou sur demande)
+    float roll_ref = 0.0;   // yaw de référence (calibration au démmarage ou sur demande)
     float cmd_yaw;   // commande angulaire yaw (lacet)
     float cmd_pitch; // commande angulaire pitch (tangage)
     float cmd_roll;  // commande angulaire roll (roulis)
@@ -247,6 +250,10 @@ void loop()
     if (bmp.performReading()) {
         pressure = bmp.pressure;
         temp = bmp.temperature;
+        estimateAltitude(&att_states, &att_param, bmp.pressure, bmp.temperature, 0);
+        if(t_target > 3000 && t_target < 4000){
+            estimateAltitude(&att_states, &att_param, bmp.pressure, bmp.temperature, 1); // lance une calibration au bout de 3 secondes
+        }
     }
 
     // --- BNO085 ---
@@ -265,6 +272,9 @@ void loop()
                 sensorValue.un.rotationVector.k};
         }
     }
+    if(t_target > 3000 && t_target < 3100) {
+        computeEulerAngles(q_M_RV.w, q_M_RV.x, q_M_RV.y, q_M_RV.z, &roll_ref, &pitch_ref, &yaw_ref);
+    }
     computeRotationMatrix(q_M_RV.w, q_M_RV.x, q_M_RV.y, q_M_RV.z, R_M_RV);
     rotMult(R_A_RV, R_A_M, R_M_RV);
     computeRotationMatrix(q_M_GRV.w, q_M_GRV.x, q_M_GRV.y, q_M_GRV.z, R_M_GRV);
@@ -275,36 +285,23 @@ void loop()
     // --- Vision ---
     vision_frame_t vf;
     if (readVisionFrame(vf)) {
-        // Exemple d’exploitation
-        logs[0] = (int16_t) (256*R_M_RV[0][0]);
-        logs[1] = (int16_t) (256*R_M_RV[0][1]);
-        logs[2] = (int16_t) (256*R_M_RV[0][2]);
-        logs[3] = (int16_t) (256*R_M_RV[1][0]);
-        logs[4] = (int16_t) (256*R_M_RV[1][1]);
-        logs[5] = (int16_t) (256*R_M_RV[1][2]);
-        logs[6] = (int16_t) (256*R_M_RV[2][0]);
-        logs[7] = (int16_t) (256*R_M_RV[2][1]);
-        logs[8] = (int16_t) (256*R_M_RV[2][2]);
-        logs[9] = (int16_t) (256*computePitchCommandSignal(R_A_GRV, 0));
-        logs[10] = (int16_t) (256*computeRollCommandSignal(R_A_GRV, 0));
-        logs[11] = (int16_t) (256*computeYawCommandSignalImproved(R_A_GRV, 0));
-        logs[12] = (int16_t) (256*computePitchCommandSignal(R_A_RV, 0));
-        logs[13] = (int16_t) (256*computeRollCommandSignal(R_A_RV, 0));
-        logs[14] = (int16_t) (256*computeYawCommandSignalImproved(R_A_RV, 0));
-        //send_quaternions_and_logs((float *)(&q_M_GRV), (float *)(&q_M_RV), logs);
+        // Hybridation vision
     }
     
-    cmd_yaw = ((float)lora_cmd[2])*0.0245436921875; // entre -1 et 1 rad
+    cmd_yaw = yaw_ref - 3.1415926f + ((float)lora_cmd[1])*0.0245436921875f; // entre 0 rad (0) et 2pi-epsilon rad (255) 
+    cmd_roll = (((float)lora_cmd[2])*0.5-127)/127; // entre -0.5 et 0.5 rad (environ +- 30 degrés)
     cmd_pitch = (((float)lora_cmd[3])-127)/127; // entre -1 et 1 rad
-    cmd_roll = 0; // pas de roll autorisé dans un premier temps (asservissement en yaw en gardant l'avion à plat)
 
-    control_update_inner(control_states, control_gains, R_A_GRV, cmd_yaw, cmd_pitch, cmd_roll);
+    control_update_inner(control_states, control_param, R_A_GRV, cmd_yaw, cmd_pitch, cmd_roll);
 
-    /*Serial.print(control_states.ctrl_yaw);
-    Serial.print(" - ");
-    Serial.print(control_states.ctrl_pitch);
-    Serial.print(" - ");
-    Serial.println(control_states.ctrl_roll);*/
+    Serial.print("altitude relative : ");
+    Serial.print(att_states.altitude);
+    Serial.print(" control yaw : ");
+    Serial.println(control_states.ctrl_yaw);
+    //Serial.print(" - ");
+    //Serial.print(control_states.ctrl_pitch);
+    //Serial.print(" - ");
+    //Serial.println(control_states.ctrl_roll);
     servo1 = max(0, min(63, (int)((-control_states.ctrl_pitch) + 32)));
     servo2 = max(0, min(63, (int)((-control_states.ctrl_roll) + 32)));
     servo3 = max(0, min(63, (int)((-control_states.ctrl_roll) + 32)));

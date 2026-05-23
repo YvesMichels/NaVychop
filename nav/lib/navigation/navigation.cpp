@@ -1,5 +1,6 @@
-#include <Arduino.h>
 #include "navigation.h"
+#include "config.h"
+#include "default_parameters.h"
 
 void printEulerFromQuat(float q0, float q1, float q2, float q3) {
   // q0 = real, q1 = i, q2 = j, q3 = k
@@ -201,4 +202,99 @@ float computeYawCommandSignalImproved(float R[3][3], float yaw_cmd) {
     }
 
     return cross;
+}
+
+#include <cmath>
+
+
+void attitude_init(AttitudeState *st, AttitudeParameters *params)
+{
+    // ----------------------------
+    // STATE INITIALIZATION
+    // ----------------------------
+    st->altitude     = 0.0f;
+    st->altitude_raw = 0.0f;
+    st->p0           = 0.0f;
+    st->alt_bias     = 0.0f;
+
+    st->cal_counter  = 0;
+    st->cal_samples  = 0;
+    st->cal_active   = 0;
+
+    params->tps_cal = 2000;
+
+    // ----------------------------
+    // PARAMETER INITIALIZATION
+    // ----------------------------
+    params->alpha_alt = 0.25f;  // filtre altitude (bon compromis avion RC)
+    params->alpha_p0  = 0.02f;  // filtre pression lente (stabilité météo)
+
+    params->g0 = 9.81f;         // réservé extension (fusion IMU future)
+}
+
+void estimateAltitude(AttitudeState *st, AttitudeParameters *params, float pressure_pa, float temperature_c, uint8_t cal_en) {
+    // ----------------------------
+    // 1. INIT CALIBRATION
+    // ----------------------------
+    if (cal_en && !st->cal_active) {
+        st->cal_active = 1;
+        st->cal_counter = 0;
+
+        // durée calibration 
+        st->cal_samples = (uint16_t)(params->tps_cal / d_t);
+
+        st->p0 = pressure_pa;
+        st->alt_bias = 0.0f;
+        st->altitude = 0.0f; // altitude relative remise à zéro
+    }
+
+    // ----------------------------
+    // 2. CALIBRATION MODE
+    // ----------------------------
+    if (st->cal_active) {
+
+        // filtre pression de référence (moyenne exponentielle)
+        st->p0 = params->alpha_p0 * pressure_pa
+               + (1.0f - params->alpha_p0) * st->p0;
+
+        st->cal_counter++;
+
+        // estimation altitude brute pendant calibration
+        float ratio = pressure_pa / st->p0;
+        st->altitude_raw = 44330.0f * (1.0f - std::pow(ratio, 0.1903f));
+
+        // accumulation bias
+        st->alt_bias = params->alpha_alt * st->altitude_raw
+                      + (1.0f - params->alpha_alt) * st->alt_bias;
+
+        // fin calibration
+        if (st->cal_counter >= st->cal_samples) {
+            st->cal_active = 0;
+        }
+
+        st->altitude = 0.0f; // altitude relative remise à zéro
+        return;
+    }
+
+    // ----------------------------
+    // 3. MODE NORMAL
+    // ----------------------------
+    if (pressure_pa <= 0.0f || st->p0 <= 0.0f) {
+        return;
+    }
+
+    float ratio = pressure_pa / st->p0;
+
+    if (ratio <= 0.0f) {
+        return;
+    }
+
+    st->altitude_raw = 44330.0f * (1.0f - std::pow(ratio, 0.1903f));
+
+    // altitude relative corrigée du biais
+    float alt_corr = st->altitude_raw - st->alt_bias;
+
+    // filtre passe-bas final
+    st->altitude = params->alpha_alt * alt_corr
+                 + (1.0f - params->alpha_alt) * st->altitude;
 }

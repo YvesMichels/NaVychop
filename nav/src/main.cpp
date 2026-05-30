@@ -11,6 +11,7 @@
 #include "navigation.h"
 #include "communication.h"
 #include "control.h"
+#include "datalink.h"
 
 typedef struct {
     int32_t dummy;   // index 0 non utilisé ici
@@ -27,8 +28,8 @@ typedef struct {
     uint8_t checksum;
 } vision_frame_t;
 
-
-#define LORA_FREQ 433E6   // adapter si besoin (433E6 ou 868E6)
+// paramètres systeme
+parameters system_param;
 
 uint8_t lora_cmd[4] = {1, 0, 0, 127};
 static uint32_t last_lora_ms = 0;
@@ -65,7 +66,6 @@ AttitudeParameters att_param;
 AttitudeState att_states;
 
 // variables asservissement
-ControlParameters control_param;
 ControlState control_states; 
 
 // variables moteurs
@@ -222,7 +222,7 @@ void setup()
 
 
     // initialisation asservissement
-    control_gain_init(control_param);
+    control_gain_init(system_param.control_param);
     control_init(control_states);
 
 
@@ -301,7 +301,7 @@ void loop()
     rotMult(R_A_GRV, R_A_M, R_M_GRV);
 
     lora_link_ok = lora_check_cmd(lora_cmd);
-
+    datalink_set_param_lora(system_param, lora_cmd);
     if (lora_link_ok && lora_cmd[0]==0x01)
     {
         last_lora_ms = t_cur;
@@ -327,7 +327,7 @@ void loop()
     cmd_pitch = 0.5*(((float)lora_cmd[3])-127)/127; // entre -0.5 et 0.5 rad (environ +- 30 degrés)
     cmd_roll = 0.25*(((float)lora_cmd[2])-127)/127; // entre -0.25 et 0.25 rad (environ +- 15 degrés)
 
-    control_update_inner(control_states, control_param, R_A_GRV, cmd_yaw, cmd_pitch, cmd_roll);
+    control_update_inner(control_states, system_param.control_param, R_A_GRV, cmd_yaw, cmd_pitch, cmd_roll);
 
     servo1 = max(0, min(63, (int)((-control_states.ctrl_pitch) + 32)));
     servo2 = max(0, min(63, (int)((-control_states.ctrl_roll) + 32)));

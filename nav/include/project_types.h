@@ -2,8 +2,8 @@
 #include "navigation.h"
 
 struct parameters {
-    ControlGains control_parameters;
-
+    ControlParameters control_param;
+    
 };
 
 struct states {

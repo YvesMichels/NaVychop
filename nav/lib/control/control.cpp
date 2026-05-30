@@ -39,7 +39,9 @@ void control_gain_init(ControlParameters &gains)
     gains.Ki_roll = def_ki_roll;
     gains.Kd_roll = def_kd_roll;
 
-    gains.bias_roll = 0.0f;   // biais sur le roll : commande pour vol droit sans perturbations
+    gains.ctrl_bias_yaw = 0.0f;     // biais de position de la gouverne sur le yaw : calibration manuelle
+    gains.ctrl_bias_pitch = 0.0f;   // biais de position de la gouverne sur le pitch : calibration manuelle
+    gains.ctrl_bias_roll = 0.0f;    // biais de position de la gouverne sur le roll : calibration manuelle
 }
 
 inline void bound_integrator(float &value, float max_value)

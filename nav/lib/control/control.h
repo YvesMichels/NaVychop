@@ -15,7 +15,10 @@ struct ControlParameters {
     float Ki_roll;
     float Kd_roll;
 
-    float bias_roll;   // biais sur le roll : commande pour vol droit sans perturbations
+    float ctrl_bias_yaw;    // biais de position de la gouverne sur le yaw : calibration manuelle
+    float ctrl_bias_pitch;  // biais de position de la gouverne sur le pitch : calibration manuelle
+    float ctrl_bias_roll;   // biais de position de la gouverne sur le roll : calibration manuelle
+
 };
 
 struct ControlState {
@@ -45,4 +48,5 @@ void control_gain_init(ControlParameters
  &gains);
 void control_update_inner(ControlState &state, ControlParameters
  &gains, float R_A_T[3][3], float cmd_yaw, float cmd_pitch, float cmd_roll);
+ 
 #endif

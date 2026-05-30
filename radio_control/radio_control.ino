@@ -134,7 +134,7 @@ void setup()
     }
 
     // Paramètres radio
-    LoRa.setSpreadingFactor(7);
+    LoRa.setSpreadingFactor(9);
     LoRa.setSignalBandwidth(125E3);
     LoRa.setCodingRate4(5);
 

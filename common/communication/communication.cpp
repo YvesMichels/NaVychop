@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <LoRa.h>
 #include "config.h"
+#include "communication.h"
+
 
 #define SYNC_1 0xAA
 #define SYNC_2 0x55
@@ -201,7 +203,6 @@ bool lora_check_cmd(uint8_t lora_cmd[4]){
                     // Paramètres / config
                     case 0x02:
                     {
-                        // traitement futur
                         break;
                     }
 
@@ -221,4 +222,269 @@ bool lora_check_cmd(uint8_t lora_cmd[4]){
         //LoRa.receive();
     }
     return msg_ok;
+}
+
+void lora_failsafe(uint8_t lora_cmd[4], uint32_t last_lora_ms, uint32_t now_ms, uint8_t old_value, uint16_t timeout_ms)
+{
+    if ((now_ms - last_lora_ms) > timeout_ms)
+    {
+        // FAILSAFE MODE
+
+        lora_cmd[0] = 0;       // flag désactivé
+        lora_cmd[1] = 0;       // throttle coupé (ou remplacé par idle si tu veux)
+        lora_cmd[2] = old_value; // maintien dernière consigne yaw
+        lora_cmd[3] = 127;     // pitch neutre
+
+        return;
+    }
+}
+
+void addLog(
+    logState &s, 
+    uint16_t &logIndex, 
+    unsigned long t,
+    float ax,
+    float ay,
+    float az,
+    const Quaternion& q_rot,
+    const Quaternion& q_game,
+    const AttitudeState& att,
+    const ControlState& ctrl,
+    int8_t esc)
+{
+
+    // Temps
+    s.t = t;
+
+    // Accélération
+    s.ax = ax;
+    s.ay = ay;
+    s.az = az;
+
+    // Quaternion rotation
+    s.qw = q_rot.w;
+    s.qx = q_rot.x;
+    s.qy = q_rot.y;
+    s.qz = q_rot.z;
+
+    // Quaternion game rotation
+    s.gqw = q_game.w;
+    s.gqx = q_game.x;
+    s.gqy = q_game.y;
+    s.gqz = q_game.z;
+
+    // Altitude
+    s.altitude = att.altitude;
+    s.p0 = att.p0;
+
+    // Intégrateurs
+    s.eta_yaw = ctrl.eta_yaw;
+    s.eta_pitch = ctrl.eta_pitch;
+    s.eta_roll = ctrl.eta_roll;
+
+    // Valeurs précédentes
+    s.old_yaw = ctrl.old_yaw;
+    s.old_pitch = ctrl.old_pitch;
+    s.old_roll = ctrl.old_roll;
+
+    // Commandes
+    s.ctrl_yaw = ctrl.ctrl_yaw;
+    s.ctrl_pitch = ctrl.ctrl_pitch;
+    s.ctrl_roll = ctrl.ctrl_roll;
+
+    // ESC
+    s.esc = esc;
+
+    // Incrément circulaire
+    logIndex++;
+
+    if (logIndex >= LOG_SIZE)
+    {
+        logIndex = LOG_SIZE-1;
+    }
+}
+
+void saveLogsToFlash(logState *buffer) {
+    File file = LittleFS.open("/logs.bin", FILE_WRITE);
+
+    if (!file)
+    {
+        Serial.println("Erreur ouverture fichier");
+        return;
+    }
+
+    size_t written = file.write(
+        (uint8_t*)buffer,
+        LOG_SIZE * sizeof(logState));
+
+    file.close();
+
+    Serial.print("Octets ecrits : ");
+    Serial.println(written);
+}
+
+void loadLogsFromFlash(logState *buffer) {
+    File file = LittleFS.open("/logs.bin", FILE_READ);
+
+    if (!file)
+    {
+        Serial.println("Erreur lecture fichier");
+        return;
+    }
+
+    size_t readBytes = file.read(
+        (uint8_t*)buffer,
+        LOG_SIZE * sizeof(logState));
+
+    file.close();
+
+    Serial.print("Octets lus : ");
+    Serial.println(readBytes);
+}
+
+void sendLogsCSV(logState *buffer)
+{
+    // =========================
+    // Header CSV
+    // =========================
+
+    Serial.println(
+        "t,"
+        "ax,ay,az,"
+        "qw,qx,qy,qz,"
+        "gqw,gqx,gqy,gqz,"
+        "altitude,p0,"
+        "eta_yaw,eta_pitch,eta_roll,"
+        "old_yaw,old_pitch,old_roll,"
+        "ctrl_yaw,ctrl_pitch,ctrl_roll,"
+        "esc");
+
+    // =========================
+    // Donnees
+    // =========================
+
+    for (int i = 0; i < LOG_SIZE; i++)
+    {
+        logState &s = buffer[i];
+
+        Serial.print(s.t);
+
+        Serial.print(",");
+        Serial.print(s.ax, 6);
+
+        Serial.print(",");
+        Serial.print(s.ay, 6);
+
+        Serial.print(",");
+        Serial.print(s.az, 6);
+
+        // Quaternion rotation
+        Serial.print(",");
+        Serial.print(s.qw, 6);
+
+        Serial.print(",");
+        Serial.print(s.qx, 6);
+
+        Serial.print(",");
+        Serial.print(s.qy, 6);
+
+        Serial.print(",");
+        Serial.print(s.qz, 6);
+
+        // Quaternion game
+        Serial.print(",");
+        Serial.print(s.gqw, 6);
+
+        Serial.print(",");
+        Serial.print(s.gqx, 6);
+
+        Serial.print(",");
+        Serial.print(s.gqy, 6);
+
+        Serial.print(",");
+        Serial.print(s.gqz, 6);
+
+        // Altitude
+        Serial.print(",");
+        Serial.print(s.altitude, 3);
+
+        Serial.print(",");
+        Serial.print(s.p0, 3);
+
+        // Integrateurs
+        Serial.print(",");
+        Serial.print(s.eta_yaw, 6);
+
+        Serial.print(",");
+        Serial.print(s.eta_pitch, 6);
+
+        Serial.print(",");
+        Serial.print(s.eta_roll, 6);
+
+        // Old projections
+        Serial.print(",");
+        Serial.print(s.old_yaw, 6);
+
+        Serial.print(",");
+        Serial.print(s.old_pitch, 6);
+
+        Serial.print(",");
+        Serial.print(s.old_roll, 6);
+
+        // Commandes
+        Serial.print(",");
+        Serial.print(s.ctrl_yaw, 6);
+
+        Serial.print(",");
+        Serial.print(s.ctrl_pitch, 6);
+
+        Serial.print(",");
+        Serial.print(s.ctrl_roll, 6);
+
+        // ESC
+        Serial.print(",");
+        Serial.println(s.esc);
+    }
+}
+
+void checkUartAndTriggerDump(uint8_t sync_state, logState *buffer)
+{
+    while (Serial.available())
+    {
+        uint8_t b = Serial.read();
+
+        switch (sync_state)
+        {
+            case 0:
+                if (b == SYNC_1) sync_state = 1;
+                else sync_state = 0;
+                break;
+
+            case 1:
+                if (b == SYNC_2) sync_state = 2;
+                else sync_state = (b == SYNC_1) ? 1 : 0;
+                break;
+
+            case 2:
+                if (b == SYNC_3) sync_state = 3;
+                else sync_state = 0;
+                break;
+
+            case 3:
+                if (b == SYNC_4)
+                {
+                    sync_state = 0;
+
+                    // =========================
+                    // TRIGGER DUMP CSV
+                    // =========================
+                    sendLogsCSV(buffer);
+                }
+                else
+                {
+                    sync_state = 0;
+                }
+                break;
+        }
+    }
 }

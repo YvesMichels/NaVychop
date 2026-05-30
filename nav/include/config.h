@@ -20,8 +20,12 @@
 // gestion du temps 
 #define d_t 40              // interval de temps cible d'une boucle (ms)
 
+// LoRa 
+#define LORA_SF 7
+#define LORA_BW 125E3
+#define LORA_CR4 5
 
-// communication config
+// communication 
 #define SYNC_1 0xAA         // octet de synchronisation 1
 #define SYNC_2 0x55         // octet de synchronisation 2
 #define SYNC_3 0xCC         // octet de synchronisation 3
@@ -41,6 +45,8 @@
 #define binpt_yaw 8         // mise à l'échelle yaw (puissance de 2 car quantification en virgule fixe)
 #define binpt_pitch 4       // mise à l'échelle pitch (puissance de 2 car quantification en virgule fixe)
 #define binpt_roll 4        // mise à l'échelle roll (puissance de 2 car quantification en virgule fixe)
+
+#define LOG_SIZE 1000
 
 
 #endif

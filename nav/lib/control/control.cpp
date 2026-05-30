@@ -61,7 +61,10 @@ void control_update_inner(ControlState &state, ControlParameters &gains, float R
     float proj_roll;
 
     proj_yaw = computeYawCommandSignalImproved(R_A_T, cmd_yaw);  
-    proj_pitch = computePitchCommandSignal(R_A_T, cmd_pitch); //comande test à +- 1 rad
+    proj_pitch = computePitchCommandSignal(R_A_T, cmd_pitch); 
+
+    //cmd_roll = -0*proj_yaw;            // le roll est proportionnel à l'écart de yaw
+    bound_integrator(cmd_roll, 0.4);// le roll est borné à 0.4 rad
     proj_roll = computeRollCommandSignal(R_A_T, cmd_roll);
 
     state.eta_yaw += proj_yaw * d_t;

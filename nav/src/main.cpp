@@ -30,9 +30,9 @@ typedef struct {
 
 #define LORA_FREQ 433E6   // adapter si besoin (433E6 ou 868E6)
 
-uint8_t lora_cmd[4] = {1, 0, 127, 127};
-
-uint32_t last_lora_frame_ms = 0;
+uint8_t lora_cmd[4] = {1, 0, 0, 127};
+static uint32_t last_lora_ms = 0;
+static uint8_t old_yaw_cmd = 0;
 bool lora_link_ok = false;
 
 SPIClass spiLoRa(VSPI);
@@ -58,6 +58,7 @@ float R_A_M[3][3] = {
 };// matrice de rotation de l'avion (A) par rapport à l'IMU (M) (fixe, dépend du montage)
 float R_A_RV[3][3]; // matrice de rotation de l'avion (A) par rapport à la terre hybridée magnéto
 float R_A_GRV[3][3];// matrice de rotation de l'avion (A) par rapport à la terre sans magnéto
+float accel[3];     // vecteur d'accéleration
 
 // variables altitude
 AttitudeParameters att_param;
@@ -80,6 +81,11 @@ unsigned long t_0, t_cur; // temps courant mesuré
 unsigned long t_target = 0;
 int32_t delta_t_loop; // décallage entre le temps mesuré et le temps 
 
+// logs 
+logState logBuffer[LOG_SIZE];
+uint16_t logIndex = 0;
+uint8_t save_en = 0;
+uint8_t sync_state = 0;
 
 bool readVisionFrame(vision_frame_t &out)
 {
@@ -161,7 +167,8 @@ void setup()
     }
 
     bno08x.enableReport(SH2_ROTATION_VECTOR, reportIntervalUs);
-    bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, reportIntervalUs); 
+    bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, reportIntervalUs);
+    //bno08x.enableReport(SH2_LINEAR_ACCELERATION, reportIntervalUs);
 
     Serial.println("INIT OK");
 
@@ -199,9 +206,9 @@ void setup()
     }
 
     // Paramétrage radio
-    LoRa.setSpreadingFactor(7);
-    LoRa.setSignalBandwidth(125E3);
-    LoRa.setCodingRate4(5);
+    LoRa.setSpreadingFactor(LORA_SF);
+    LoRa.setSignalBandwidth(LORA_BW);
+    LoRa.setCodingRate4(LORA_CR4);
     LoRa.enableCrc();
 
     Serial.println("LoRa ready");
@@ -218,8 +225,15 @@ void setup()
     control_gain_init(control_param);
     control_init(control_states);
 
+
+    if (!LittleFS.begin(true)) {
+        Serial.println("Erreur LittleFS");
+        return;
+    }
+
+    Serial.println("LittleFS OK");
+
     // synchronisation du module de vision et initialisation du temps
-    
     pinMode(32, OUTPUT);
     digitalWrite(32, HIGH);
     delay(500);
@@ -271,6 +285,12 @@ void loop()
                 sensorValue.un.rotationVector.j,
                 sensorValue.un.rotationVector.k};
         }
+
+        /*if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
+            accel[0] = sensorValue.un.linearAcceleration.x;
+            accel[1] = sensorValue.un.linearAcceleration.y;
+            accel[2] = sensorValue.un.linearAcceleration.z;
+        }*/
     }
     if(t_target > 3000 && t_target < 3100) {
         computeEulerAngles(q_M_RV.w, q_M_RV.x, q_M_RV.y, q_M_RV.z, &roll_ref, &pitch_ref, &yaw_ref);
@@ -280,41 +300,53 @@ void loop()
     computeRotationMatrix(q_M_GRV.w, q_M_GRV.x, q_M_GRV.y, q_M_GRV.z, R_M_GRV);
     rotMult(R_A_GRV, R_A_M, R_M_GRV);
 
-    lora_check_cmd(lora_cmd);
+    lora_link_ok = lora_check_cmd(lora_cmd);
+
+    if (lora_link_ok && lora_cmd[0]==0x01)
+    {
+        last_lora_ms = t_cur;
+        // mémorisation état utile (ex: yaw stick)
+        old_yaw_cmd = lora_cmd[2];
+    }
+    /*if (lora_link_ok && lora_cmd[0]==0x02)
+    {
+        last_lora_ms = t_cur;
+        // mémorisation état utile (ex: yaw stick)
+        save_en = lora_cmd[1];
+    }*/
+    lora_failsafe(lora_cmd, last_lora_ms, t_cur, old_yaw_cmd, 1000);
 
     // --- Vision ---
     vision_frame_t vf;
     if (readVisionFrame(vf)) {
         // Hybridation vision
     }
+
     
-    cmd_yaw = yaw_ref - 3.1415926f + ((float)lora_cmd[1])*0.0245436921875f; // entre 0 rad (0) et 2pi-epsilon rad (255) 
-    cmd_roll = (((float)lora_cmd[2])*0.5-127)/127; // entre -0.5 et 0.5 rad (environ +- 30 degrés)
-    cmd_pitch = (((float)lora_cmd[3])-127)/127; // entre -1 et 1 rad
+    cmd_yaw = 0;//yaw_ref - 3.1415926f + ((float)lora_cmd[2])*0.0245436921875f; // entre 0 rad (0) et 2pi-epsilon rad (255) 
+    cmd_pitch = 0.5*(((float)lora_cmd[3])-127)/127; // entre -0.5 et 0.5 rad (environ +- 30 degrés)
+    cmd_roll = 0.25*(((float)lora_cmd[2])-127)/127; // entre -0.25 et 0.25 rad (environ +- 15 degrés)
 
     control_update_inner(control_states, control_param, R_A_GRV, cmd_yaw, cmd_pitch, cmd_roll);
 
-    Serial.print("altitude relative : ");
-    Serial.print(att_states.altitude);
-    Serial.print(" control yaw : ");
-    Serial.println(control_states.ctrl_yaw);
-    //Serial.print(" - ");
-    //Serial.print(control_states.ctrl_pitch);
-    //Serial.print(" - ");
-    //Serial.println(control_states.ctrl_roll);
     servo1 = max(0, min(63, (int)((-control_states.ctrl_pitch) + 32)));
     servo2 = max(0, min(63, (int)((-control_states.ctrl_roll) + 32)));
     servo3 = max(0, min(63, (int)((-control_states.ctrl_roll) + 32)));
-    servo4 = max(20, min(43, (int)((-control_states.ctrl_yaw) + 32)));
-    esc = 0;
-    /*if(((t_cur-t_0)/250)<48){ 
-        esc = (t_cur-t_0)/250;
-    }
-    else
-    {
-        esc = 48 ;
-    }*/
+    servo4 = max(10, min(43, (int)((-control_states.ctrl_yaw) + 32)));
+    esc = lora_cmd[1]/4;
+
     motors_control(servo1, servo2, servo3, servo4, esc);
+
+    /*if(save_en == 1) {
+        addLog(logBuffer[logIndex], logIndex, t_cur, accel[0], accel[1], accel[2], q_M_RV, q_M_GRV, att_states, control_states, esc);
+    }
+    if(save_en == 2) {
+        //saveLogsToFlash(logBuffer);
+        sendLogsCSV(logBuffer);
+        save_en = 0;
+    }
+    checkUartAndTriggerDump(sync_state, logBuffer);*/
+
 
     // gestion du temps
   t_target = t_target + d_t;

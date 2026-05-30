@@ -26,6 +26,11 @@ SPIClass spiLoRa;
 #define SYNC2 0x55
 
 #define FRAME_SIZE 7
+#define UART_FRAME_SIZE 7
+
+uint8_t uart_state = 0;
+uint8_t uart_buf[UART_FRAME_SIZE];
+
 
 // =============================
 // CRC8
@@ -51,6 +56,7 @@ uint8_t crc8_compute(uint8_t *data, uint8_t length)
 
     return crc;
 }
+
 
 // =============================
 // Construction trame
@@ -143,33 +149,75 @@ void setup()
 
 void loop()
 {
-    // Exemple :
-    // type = 0x01 -> commande manuelle
+    while (Serial.available())
+    {
+        uint8_t b = Serial.read();
 
-    static uint8_t throttle = 0;
+        switch (uart_state)
+        {
+            case 0: // attente SYNC1
+                if (b == SYNC1)
+                {
+                    uart_buf[0] = b;
+                    uart_state = 1;
+                }
+                break;
 
-    uint8_t type  = 0x01;
+            case 1: // attente SYNC2
+                if (b == SYNC2)
+                {
+                    uart_buf[1] = b;
+                    uart_state = 2;
+                }
+                else
+                {
+                    uart_state = 0;
+                }
+                break;
 
-    // Exemples de commandes
-    uint8_t data0 = throttle; // moteur
-    uint8_t data1 = 127;      // dérive neutre
-    uint8_t data2 = 127;      // altitude neutre
+            case 2: // type
+                uart_buf[2] = b;
+                uart_state = 3;
+                break;
 
-    send_lora_frame(type,
-                    data0,
-                    data1,
-                    data2);
+            case 3: // data0
+                uart_buf[3] = b;
+                uart_state = 4;
+                break;
 
-    Serial.print("TX : ");
-    Serial.print(type, HEX);
-    Serial.print(" ");
-    Serial.print(data0);
-    Serial.print(" ");
-    Serial.print(data1);
-    Serial.print(" ");
-    Serial.println(data2);
+            case 4: // data1
+                uart_buf[4] = b;
+                uart_state = 5;
+                break;
+                
+            case 5: // data2
+                uart_buf[5] = b;
+                uart_state = 6;
+                break;
 
-    throttle += 1;
+            case 6: // CRC
+                uart_buf[6] = b;
 
-    delay(200);
+                {
+                    uint8_t crc = crc8_compute(&uart_buf[2], 4);
+
+                    if (crc == uart_buf[6])
+                    {
+                        Serial.println("envoi");
+                        send_lora_frame(uart_buf[2],
+                                        uart_buf[3],
+                                        uart_buf[4],
+                                        uart_buf[5]);
+
+                    }
+                    else
+                    {
+                        Serial.println("CRC ERR");
+                    }
+                }
+
+                uart_state = 0;
+                break;
+        }
+    }
 }

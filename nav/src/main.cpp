@@ -308,12 +308,12 @@ void loop()
         // mémorisation état utile (ex: yaw stick)
         old_yaw_cmd = lora_cmd[2];
     }
-    /*if (lora_link_ok && lora_cmd[0]==0x02)
+    if (lora_link_ok && lora_cmd[0]==0x02)
     {
         last_lora_ms = t_cur;
         // mémorisation état utile (ex: yaw stick)
         save_en = lora_cmd[1];
-    }*/
+    }
     lora_failsafe(lora_cmd, last_lora_ms, t_cur, old_yaw_cmd, 1000);
 
     // --- Vision ---
@@ -337,16 +337,15 @@ void loop()
 
     motors_control(servo1, servo2, servo3, servo4, esc);
 
-    /*if(save_en == 1) {
-        addLog(logBuffer[logIndex], logIndex, t_cur, accel[0], accel[1], accel[2], q_M_RV, q_M_GRV, att_states, control_states, esc);
+    if(save_en == 1) {
+        addLog(logBuffer[logIndex], logIndex, t_cur-t_0, accel[0], accel[1], accel[2], q_M_RV, q_M_GRV, att_states, control_states, esc);
     }
     if(save_en == 2) {
-        //saveLogsToFlash(logBuffer);
-        sendLogsCSV(logBuffer);
+        saveLogsToFlash(logBuffer);
+        //sendLogsCSV(logBuffer);
         save_en = 0;
     }
-    checkUartAndTriggerDump(sync_state, logBuffer);*/
-
+    checkUartAndTriggerDump(sync_state, logBuffer);
 
     // gestion du temps
   t_target = t_target + d_t;

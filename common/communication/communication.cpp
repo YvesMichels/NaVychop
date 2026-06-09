@@ -203,6 +203,7 @@ bool lora_check_cmd(uint8_t lora_cmd[4]){
                     // Paramètres / config
                     case 0x02:
                     {
+                        msg_ok = true;
                         break;
                     }
 
@@ -478,6 +479,7 @@ void checkUartAndTriggerDump(uint8_t sync_state, logState *buffer)
                     // =========================
                     // TRIGGER DUMP CSV
                     // =========================
+                    loadLogsFromFlash(buffer);
                     sendLogsCSV(buffer);
                 }
                 else

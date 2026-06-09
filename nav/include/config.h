@@ -22,8 +22,8 @@
 
 // LoRa 
 #define LORA_FREQ 433E6         // adapter si besoin (433E6 ou 868E6)
-#define LORA_SF 9
-#define LORA_BW 125E3
+#define LORA_SF 9               // SF 9 : compatible 200ms trame et adapté pour longues distances
+#define LORA_BW 125E3           // 125KHz : compatible 200ms trame et adapté pour longues distances
 #define LORA_CR4 5
 
 #define LORA_CMD_SET_PARAM 16   // indice "écriture paramètre"

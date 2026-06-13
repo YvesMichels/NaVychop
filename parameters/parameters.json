@@ -1,0 +1,59 @@
+{
+  "_comment": "id : entier uint16. tx_type = 0x10 + (id >> 8), dat0 = id & 0xFF, dat1/dat2 = valeur int16 LS/MS. binpt : valeur physique * 2^binpt = int16 envoyé.",
+  "categories": [
+    {
+      "id": "pid_yaw",
+      "label": "PID — Lacet (Yaw)",
+      "description": "Gains du correcteur PID sur l'axe de lacet",
+      "parameters": [
+        { "id": 0,  "label": "Kp yaw",              "description": "Gain proportionnel yaw [cmd / projection]",        "type": "float",  "binpt": 4, "default": 0.0,   "unit": "cmd/proj" },
+        { "id": 1,  "label": "Ki yaw",              "description": "Gain intégral yaw [cmd / (projection·ms)]",        "type": "float",  "binpt": 8, "default": 0.0,   "unit": "cmd/(proj·ms)" },
+        { "id": 2,  "label": "Kd yaw",              "description": "Gain dérivé yaw [cmd·ms / projection]",            "type": "float",  "binpt": 4, "default": 0.0,   "unit": "cmd·ms/proj" },
+        { "id": 3,  "label": "Sat. intégrateur yaw","description": "Saturation de l'intégrateur yaw",                  "type": "float",  "binpt": 0, "default": 0.0,   "unit": "proj·ms" },
+        { "id": 4,  "label": "Biais gouverne yaw",  "description": "Offset de trim sur la gouverne yaw",               "type": "float",  "binpt": 6, "default": 0.0,   "unit": "cmd" }
+      ]
+    },
+    {
+      "id": "pid_pitch",
+      "label": "PID — Tangage (Pitch)",
+      "description": "Gains du correcteur PID sur l'axe de tangage",
+      "parameters": [
+        { "id": 10, "label": "Kp pitch",              "description": "Gain proportionnel pitch [cmd / projection]",      "type": "float",  "binpt": 4, "default": 30.0,  "unit": "cmd/proj" },
+        { "id": 11, "label": "Ki pitch",              "description": "Gain intégral pitch [cmd / (projection·ms)]",      "type": "float",  "binpt": 8, "default": 0.005, "unit": "cmd/(proj·ms)" },
+        { "id": 12, "label": "Kd pitch",              "description": "Gain dérivé pitch [cmd·ms / projection]",          "type": "float",  "binpt": 4, "default": 20.0,  "unit": "cmd·ms/proj" },
+        { "id": 13, "label": "Sat. intégrateur pitch","description": "Saturation de l'intégrateur pitch",                "type": "float",  "binpt": 0, "default": 300.0, "unit": "proj·ms" },
+        { "id": 14, "label": "Biais gouverne pitch",  "description": "Offset de trim sur la gouverne pitch",             "type": "float",  "binpt": 6, "default": 0.0,   "unit": "cmd" }
+      ]
+    },
+    {
+      "id": "pid_roll",
+      "label": "PID — Roulis (Roll)",
+      "description": "Gains du correcteur PID sur l'axe de roulis",
+      "parameters": [
+        { "id": 20, "label": "Kp roll",              "description": "Gain proportionnel roll [cmd / projection]",       "type": "float",  "binpt": 4, "default": 30.0,  "unit": "cmd/proj" },
+        { "id": 21, "label": "Ki roll",              "description": "Gain intégral roll [cmd / (projection·ms)]",       "type": "float",  "binpt": 8, "default": 0.005, "unit": "cmd/(proj·ms)" },
+        { "id": 22, "label": "Kd roll",              "description": "Gain dérivé roll [cmd·ms / projection]",           "type": "float",  "binpt": 4, "default": 20.0,  "unit": "cmd·ms/proj" },
+        { "id": 23, "label": "Sat. intégrateur roll","description": "Saturation de l'intégrateur roll",                 "type": "float",  "binpt": 0, "default": 100.0, "unit": "proj·ms" },
+        { "id": 24, "label": "Biais gouverne roll",  "description": "Offset de trim sur la gouverne roll",              "type": "float",  "binpt": 6, "default": 0.0,   "unit": "cmd" }
+      ]
+    },
+    {
+      "id": "altitude",
+      "label": "Altitude & Baromètre",
+      "description": "Paramètres du filtre d'estimation d'altitude (BMP390)",
+      "parameters": [
+        { "id": 30, "label": "Alpha filtre altitude",    "description": "Coefficient du filtre passe-bas sur l'altitude (0..1)",                          "type": "float",  "binpt": 12, "default": 0.25,  "unit": "—" },
+        { "id": 31, "label": "Alpha filtre pression réf.","description": "Coefficient du filtre sur la pression de référence lors de la calibration (0..1)","type": "float",  "binpt": 12, "default": 0.02,  "unit": "—" },
+        { "id": 32, "label": "Durée calibration",        "description": "Durée de la phase de calibration barométrique",                                   "type": "uint16", "binpt": 0,  "default": 2000,  "unit": "ms" }
+      ]
+    },
+    {
+      "id": "lora",
+      "label": "Liaison LoRa",
+      "description": "Paramètres de la liaison radio de télécommande",
+      "parameters": [
+        { "id": 40, "label": "Timeout failsafe", "description": "Délai sans réception avant passage en mode failsafe", "type": "uint16", "binpt": 0, "default": 3000, "unit": "ms" }
+      ]
+    }
+  ]
+}

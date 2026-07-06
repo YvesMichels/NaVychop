@@ -12,6 +12,10 @@
 #define QUATERNION_FORMAT 0x51
 #define LORA_FRAME_SIZE 7 // 2 octest sync, 1 octet type, 3 octets data, 1 octet CRC
 
+#define Q4_SCALE   16.0f
+#define Q6_SCALE   64.0f
+#define Q14_SCALE  16384.0f
+
 
 void quantif_angle(int8_t* delta_angle, float angle, int16_t* last_angle, uint8_t nbits, uint8_t binpt) {
     int16_t buffer;
@@ -241,8 +245,8 @@ void lora_failsafe(uint8_t lora_cmd[4], uint32_t last_lora_ms, uint32_t now_ms, 
 }
 
 void addLog(
-    logState &s, 
-    uint16_t &logIndex, 
+    logState &s,
+    uint16_t &logIndex,
     unsigned long t,
     float ax,
     float ay,
@@ -253,55 +257,54 @@ void addLog(
     const ControlState& ctrl,
     int8_t esc)
 {
-
     // Temps
     s.t = t;
 
-    // Accélération
-    s.ax = ax;
-    s.ay = ay;
-    s.az = az;
+    // Accélération (Q4)
+    s.ax = (int16_t)roundf(ax * Q4_SCALE);
+    s.ay = (int16_t)roundf(ay * Q4_SCALE);
+    s.az = (int16_t)roundf(az * Q4_SCALE);
 
-    // Quaternion rotation
-    s.qw = q_rot.w;
-    s.qx = q_rot.x;
-    s.qy = q_rot.y;
-    s.qz = q_rot.z;
+    // Quaternion rotation (Q14)
+    s.qw = (int16_t)roundf(q_rot.w * Q14_SCALE);
+    s.qx = (int16_t)roundf(q_rot.x * Q14_SCALE);
+    s.qy = (int16_t)roundf(q_rot.y * Q14_SCALE);
+    s.qz = (int16_t)roundf(q_rot.z * Q14_SCALE);
 
-    // Quaternion game rotation
-    s.gqw = q_game.w;
-    s.gqx = q_game.x;
-    s.gqy = q_game.y;
-    s.gqz = q_game.z;
+    // Quaternion game (Q14)
+    s.gqw = (int16_t)roundf(q_game.w * Q14_SCALE);
+    s.gqx = (int16_t)roundf(q_game.x * Q14_SCALE);
+    s.gqy = (int16_t)roundf(q_game.y * Q14_SCALE);
+    s.gqz = (int16_t)roundf(q_game.z * Q14_SCALE);
 
-    // Altitude
-    s.altitude = att.altitude;
+    // Altitude (Q6)
+    s.altitude = (int16_t)roundf(att.altitude * Q6_SCALE);
     s.p0 = att.p0;
 
-    // Intégrateurs
-    s.eta_yaw = ctrl.eta_yaw;
-    s.eta_pitch = ctrl.eta_pitch;
-    s.eta_roll = ctrl.eta_roll;
+    // Intégrateurs (Q6)
+    s.eta_yaw   = (int16_t)roundf(ctrl.eta_yaw   * Q6_SCALE);
+    s.eta_pitch = (int16_t)roundf(ctrl.eta_pitch * Q6_SCALE);
+    s.eta_roll  = (int16_t)roundf(ctrl.eta_roll  * Q6_SCALE);
 
-    // Valeurs précédentes
-    s.old_yaw = ctrl.old_yaw;
-    s.old_pitch = ctrl.old_pitch;
-    s.old_roll = ctrl.old_roll;
+    // Valeurs précédentes (Q14)
+    s.old_yaw   = (int16_t)roundf(ctrl.old_yaw   * Q14_SCALE);
+    s.old_pitch = (int16_t)roundf(ctrl.old_pitch * Q14_SCALE);
+    s.old_roll  = (int16_t)roundf(ctrl.old_roll  * Q14_SCALE);
 
     // Commandes
-    s.ctrl_yaw = ctrl.ctrl_yaw;
-    s.ctrl_pitch = ctrl.ctrl_pitch;
-    s.ctrl_roll = ctrl.ctrl_roll;
+    s.ctrl_yaw   = (int8_t)roundf(ctrl.ctrl_yaw);
+    s.ctrl_pitch = (int8_t)roundf(ctrl.ctrl_pitch);
+    s.ctrl_roll  = (int8_t)roundf(ctrl.ctrl_roll);
 
     // ESC
     s.esc = esc;
 
-    // Incrément circulaire
+    // Incrément borné
     logIndex++;
 
     if (logIndex >= LOG_SIZE)
     {
-        logIndex = LOG_SIZE-1;
+        logIndex = LOG_SIZE - 1;
     }
 }
 
@@ -339,16 +342,12 @@ void loadLogsFromFlash(logState *buffer) {
 
     file.close();
 
-    Serial.print("Octets lus : ");
-    Serial.println(readBytes);
+    // Serial.print("Octets lus : ");
+    // Serial.println(readBytes);
 }
 
 void sendLogsCSV(logState *buffer)
 {
-    // =========================
-    // Header CSV
-    // =========================
-
     Serial.println(
         "t,"
         "ax,ay,az,"
@@ -360,87 +359,85 @@ void sendLogsCSV(logState *buffer)
         "ctrl_yaw,ctrl_pitch,ctrl_roll,"
         "esc");
 
-    // =========================
-    // Donnees
-    // =========================
-
     for (int i = 0; i < LOG_SIZE; i++)
     {
         logState &s = buffer[i];
 
         Serial.print(s.t);
 
+        // Accélérations Q4
         Serial.print(",");
-        Serial.print(s.ax, 6);
+        Serial.print((float)s.ax / Q4_SCALE, 4);
 
         Serial.print(",");
-        Serial.print(s.ay, 6);
+        Serial.print((float)s.ay / Q4_SCALE, 4);
 
         Serial.print(",");
-        Serial.print(s.az, 6);
+        Serial.print((float)s.az / Q4_SCALE, 4);
 
-        // Quaternion rotation
+        // Quaternion rotation Q14
         Serial.print(",");
-        Serial.print(s.qw, 6);
-
-        Serial.print(",");
-        Serial.print(s.qx, 6);
+        Serial.print((float)s.qw / Q14_SCALE, 6);
 
         Serial.print(",");
-        Serial.print(s.qy, 6);
+        Serial.print((float)s.qx / Q14_SCALE, 6);
 
         Serial.print(",");
-        Serial.print(s.qz, 6);
-
-        // Quaternion game
-        Serial.print(",");
-        Serial.print(s.gqw, 6);
+        Serial.print((float)s.qy / Q14_SCALE, 6);
 
         Serial.print(",");
-        Serial.print(s.gqx, 6);
+        Serial.print((float)s.qz / Q14_SCALE, 6);
+
+        // Quaternion game Q14
+        Serial.print(",");
+        Serial.print((float)s.gqw / Q14_SCALE, 6);
 
         Serial.print(",");
-        Serial.print(s.gqy, 6);
+        Serial.print((float)s.gqx / Q14_SCALE, 6);
 
         Serial.print(",");
-        Serial.print(s.gqz, 6);
+        Serial.print((float)s.gqy / Q14_SCALE, 6);
 
-        // Altitude
         Serial.print(",");
-        Serial.print(s.altitude, 3);
+        Serial.print((float)s.gqz / Q14_SCALE, 6);
 
+        // Altitude Q6
+        Serial.print(",");
+        Serial.print((float)s.altitude / Q6_SCALE, 3);
+
+        // p0
         Serial.print(",");
         Serial.print(s.p0, 3);
 
-        // Integrateurs
+        // Intégrateurs Q6
         Serial.print(",");
-        Serial.print(s.eta_yaw, 6);
+        Serial.print((float)s.eta_yaw / Q6_SCALE, 4);
 
         Serial.print(",");
-        Serial.print(s.eta_pitch, 6);
+        Serial.print((float)s.eta_pitch / Q6_SCALE, 4);
 
         Serial.print(",");
-        Serial.print(s.eta_roll, 6);
+        Serial.print((float)s.eta_roll / Q6_SCALE, 4);
 
-        // Old projections
+        // Old projections Q14
         Serial.print(",");
-        Serial.print(s.old_yaw, 6);
-
-        Serial.print(",");
-        Serial.print(s.old_pitch, 6);
+        Serial.print((float)s.old_yaw / Q14_SCALE, 6);
 
         Serial.print(",");
-        Serial.print(s.old_roll, 6);
+        Serial.print((float)s.old_pitch / Q14_SCALE, 6);
+
+        Serial.print(",");
+        Serial.print((float)s.old_roll / Q14_SCALE, 6);
 
         // Commandes
         Serial.print(",");
-        Serial.print(s.ctrl_yaw, 6);
+        Serial.print(s.ctrl_yaw);
 
         Serial.print(",");
-        Serial.print(s.ctrl_pitch, 6);
+        Serial.print(s.ctrl_pitch);
 
         Serial.print(",");
-        Serial.print(s.ctrl_roll, 6);
+        Serial.print(s.ctrl_roll);
 
         // ESC
         Serial.print(",");

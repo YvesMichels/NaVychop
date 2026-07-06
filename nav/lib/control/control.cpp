@@ -69,6 +69,11 @@ void control_update_inner(ControlState &state, ControlParameters &gains, float R
     bound_integrator(cmd_roll, 0.4);// le roll est borné à 0.4 rad
     proj_roll = computeRollCommandSignal(R_A_T, cmd_roll);
 
+    /*Serial.print(R_A_T[0][0]); 
+    Serial.print(" - ");
+    Serial.print(R_A_T[0][1]); 
+    Serial.print(" - ");
+    Serial.println(R_A_T[0][2]); */
     state.eta_yaw += proj_yaw * d_t;
     bound_integrator(state.eta_yaw, def_max_eta_yaw);
 
@@ -80,9 +85,9 @@ void control_update_inner(ControlState &state, ControlParameters &gains, float R
 
 
     // controle PI
-    state.ctrl_yaw = proj_yaw*gains.Kp_yaw + state.eta_yaw*gains.Ki_yaw;
-    state.ctrl_pitch = proj_pitch*gains.Kp_pitch + state.eta_pitch*gains.Ki_pitch;
-    state.ctrl_roll = proj_roll*gains.Kp_roll + state.eta_roll*gains.Ki_roll;
+    state.ctrl_yaw = proj_yaw*gains.Kp_yaw + state.eta_yaw*gains.Ki_yaw + gains.ctrl_bias_yaw;
+    state.ctrl_pitch = proj_pitch*gains.Kp_pitch + state.eta_pitch*gains.Ki_pitch + gains.ctrl_bias_pitch;
+    state.ctrl_roll = proj_roll*gains.Kp_roll + state.eta_roll*gains.Ki_roll + gains.ctrl_bias_roll;
 
     // control dérivée si init passée
     if(state.init == 0){

@@ -48,7 +48,9 @@ TYPE_SAVE = 0x02
 INT16_MIN = -32768
 INT16_MAX =  32767
 
-BAUDRATE_DEFAULT = 115200
+BAUDRATE_DEFAULT  = 115200
+LORA_RATE_HZ      = 5          # cadence max LoRa (paramétrage ET pilotage)
+LORA_PERIOD_S     = 1.0 / LORA_RATE_HZ   # 200 ms
 
 # Largeurs colonnes fixes partagées (header + lignes)
 COL_WIDTHS = {
@@ -291,7 +293,7 @@ class JoystickController:
     """
     DEADZONE_AXIS0 = 0.05
     DEADZONE_AXIS3 = 0.08
-    LOOP_HZ        = 20       # 50 ms
+    LOOP_HZ        = 5        # 200 ms — watchdog avion + limite LoRa
 
     def __init__(self, link: SerialLink):
         self._link       = link
@@ -1069,17 +1071,36 @@ class ParamTunerApp(tk.Tk):
             return
         self._pilot_win = PilotageWindow(self, self._link)
 
+    # ── Envoi cadencé à 5 Hz (200 ms entre chaque trame) ───────────────
+    PARAM_SEND_INTERVAL = 0.200   # s — limite LoRa SF9 BW125
+
+    def _send_batch(self, rows: list, label: str):
+        """Envoie une liste de ParamRow à 5 Hz dans un thread dédié."""
+        if not rows:
+            self._lbl_status.config(text="Aucun paramètre à envoyer",
+                                     fg=P["fg_dim"])
+            return
+
+        def _worker():
+            for i, r in enumerate(rows):
+                r._on_send()
+                self.after(0, lambda t=f"{label} … {i+1}/{len(rows)}": 
+                           self._lbl_status.config(text=t, fg=P["warn"]))
+                if i < len(rows) - 1:
+                    time.sleep(self.PARAM_SEND_INTERVAL)
+            self.after(0, lambda: self._lbl_status.config(
+                text=f"{label} — {len(rows)} paramètre(s) envoyé(s)",
+                fg=P["ok"]))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
     # ── Actions globales ─────────────────────────────────────────────────
     def _send_all(self):
-        for r in self.all_rows: r._on_send()
-        self._lbl_status.config(
-            text=f"Tous envoyés ({len(self.all_rows)})", fg=P["ok"])
+        self._send_batch(self.all_rows, "Envoi total")
 
     def _send_pending(self):
-        p = [r for r in self.all_rows if r.has_pending]
-        for r in p: r._on_send()
-        self._lbl_status.config(
-            text=f"{len(p)} paramètre(s) modifié(s) envoyé(s)", fg=P["ok"])
+        pending = [r for r in self.all_rows if r.has_pending]
+        self._send_batch(pending, "Envoi modifiés")
 
     def _reset_all(self):
         if not messagebox.askyesno("Réinitialiser",

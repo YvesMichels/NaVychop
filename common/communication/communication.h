@@ -18,43 +18,43 @@ struct logState
     unsigned long t;
 
     // Accélération
-    float ax;
-    float ay;
-    float az;
+    int16_t ax;         // 4 bits fractionnaire
+    int16_t ay;         // 4 bits fractionnaire
+    int16_t az;         // 4 bits fractionnaire
 
     // Quaternion rotation
-    float qw;
-    float qx;
-    float qy;
-    float qz;
+    int16_t qw;         // 14 bits fractionnaire
+    int16_t qx;         // 14 bits fractionnaire
+    int16_t qy;         // 14 bits fractionnaire
+    int16_t qz;         // 14 bits fractionnaire
 
     // Quaternion game rotation
-    float gqw;
-    float gqx;
-    float gqy;
-    float gqz;
+    int16_t gqw;        // 14 bits fractionnaire
+    int16_t gqx;        // 14 bits fractionnaire
+    int16_t gqy;        // 14 bits fractionnaire
+    int16_t gqz;        // 14 bits fractionnaire
 
     // Altitude / pression
-    float altitude;
+    int16_t altitude;   // 6 bits fractionnaire
     float p0;
 
     // Intégrateurs
-    float eta_yaw;
-    float eta_pitch;
-    float eta_roll;
+    int16_t eta_yaw;    // 6 bits fractionnaire
+    int16_t eta_pitch;  // 6 bits fractionnaire
+    int16_t eta_roll;   // 6 bits fractionnaire
 
     // Projections précédentes
-    float old_yaw;
-    float old_pitch;
-    float old_roll;
+    int16_t old_yaw;    // 14 bits fractionnaire
+    int16_t old_pitch;  // 14 bits fractionnaire
+    int16_t old_roll;   // 14 bits fractionnaire
 
     // Commandes
-    float ctrl_yaw;
-    float ctrl_pitch;
-    float ctrl_roll;
+    int8_t ctrl_yaw;    // 0 bits fractionnaire
+    int8_t ctrl_pitch;  // 0 bits fractionnaire
+    int8_t ctrl_roll;   // 0 bits fractionnaire
 
     // ESC principal
-    float esc;
+    uint8_t esc;        // 0 bits fractionnaire
 };
 
 void quantif_angle(int16_t* delta_angle, float angle, int16_t* last_angle, uint8_t nbits, uint8_t binpt);

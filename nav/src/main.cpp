@@ -50,7 +50,7 @@ static uint32_t cpt_acc = 0;
 sh2_SensorValue_t sensorValue;
 
 // variables IMU
-long reportIntervalUs = 1000*d_t;  // période de raffraichissement de l'UMI
+// commenté car directement calculé dans les appels : long reportIntervalUs = 1000*d_t;  // période de raffraichissement de l'UMI
 Quaternion q_M_GRV;
 Quaternion q_M_RV;
 float R_M_RV[3][3]; // matrice de rotation de l'umu (M) par rapport à la terre hybridée magnéto
@@ -169,9 +169,9 @@ void setup()
         while (1);
     }
 
-    bno08x.enableReport(SH2_ROTATION_VECTOR, 25*reportIntervalUs);
-    bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, reportIntervalUs);
-    bno08x.enableReport(SH2_LINEAR_ACCELERATION, 2*reportIntervalUs);
+    bno08x.enableReport(SH2_ROTATION_VECTOR, 24500*d_t);
+    bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, 1000*d_t);
+    bno08x.enableReport(SH2_LINEAR_ACCELERATION, 2865*d_t);
 
     Serial.println("INIT OK");
 
@@ -298,19 +298,7 @@ void loop()
             cpt_acc += 1;
         }
     }
-    /*Serial.print(accel[0]); 
-    Serial.print(" - ");
-    Serial.print(accel[1]); 
-    Serial.print(" - ");
-    Serial.print(accel[2]); 
-    Serial.print(" - ");*/
-    Serial.print(t_target); 
-    Serial.print(" - ");
-    Serial.print(cpt_grv); 
-    Serial.print(" - ");
-    Serial.print(cpt_rv); 
-    Serial.print(" - ");
-    Serial.println(cpt_acc); 
+
     if(t_target > 3000 && t_target < 3100) {
         computeEulerAngles(q_M_RV.w, q_M_RV.x, q_M_RV.y, q_M_RV.z, &roll_ref, &pitch_ref, &yaw_ref);
     }
@@ -356,23 +344,15 @@ void loop()
 
     motors_control(servo1, servo2, servo3, servo4, esc);
 
-    /*Serial.print(servo1); 
-    Serial.print(" - ");
-    Serial.print(servo2); 
-    Serial.print(" - ");
-    Serial.print(servo3); 
-    Serial.print(" - ");
-    Serial.println(servo4); */
-
     if(save_en == 1) {
-        //addLog(logBuffer[logIndex], logIndex, t_cur-t_0, accel[0], accel[1], accel[2], q_M_RV, q_M_GRV, att_states, control_states, esc);
+        addLog(logBuffer[logIndex], logIndex, t_cur-t_0, accel[0], accel[1], accel[2], q_M_RV, q_M_GRV, att_states, control_states, esc);
     }
     if(save_en == 2) {
-        //saveLogsToFlash(logBuffer);
-        //sendLogsCSV(logBuffer);
+        saveLogsToFlash(logBuffer);
+        sendLogsCSV(logBuffer);
         save_en = 0;
     }
-    //checkUartAndTriggerDump(sync_state, logBuffer);
+    checkUartAndTriggerDump(sync_state, logBuffer);
 
     // gestion du temps
   t_target = t_target + d_t;

@@ -70,7 +70,7 @@ bool decode_lora_frame_to_cmd(uint8_t *rx_buffer, uint8_t *cmd);
 bool lora_check_cmd(uint8_t *lora_cmd);
 void lora_failsafe(uint8_t lora_cmd[4], uint32_t last_lora_ms, uint32_t now_ms, uint8_t old_value, uint16_t timeout_ms);
 
-void addLog(
+uint8_t addLog(
     logState &s, 
     uint16_t &logIndex, 
     unsigned long t,
@@ -82,9 +82,9 @@ void addLog(
     const AttitudeState& att,
     const ControlState& ctrl,
     int8_t esc);
-void saveLogsToFlash(logState *buffer);
-void loadLogsFromFlash(logState *buffer);
-void sendLogsCSV(logState *buffer);
+void saveLogsToFlash(logState *buffer, uint16_t packetIndex);
+void sendLogsCSVFromFlash();
+void sendLogsCSV(logState &s);
 void checkUartAndTriggerDump(uint8_t sync_state, logState *buffer);
 
 #endif

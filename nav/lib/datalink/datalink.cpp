@@ -1,5 +1,5 @@
 // *** FICHIER AUTO-GÉNÉRÉ — NE PAS MODIFIER À LA MAIN ***
-// Généré par gen_datalink.py le 2026-06-14 14:26
+// Généré par gen_datalink.py le 2026-08-02 13:35
 // Source : parameters.json  (12 paramètres, 1 catégorie(s))
 //
 // Règle de routage protocolaire :

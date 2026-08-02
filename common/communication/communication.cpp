@@ -244,7 +244,7 @@ void lora_failsafe(uint8_t lora_cmd[4], uint32_t last_lora_ms, uint32_t now_ms, 
     }
 }
 
-void addLog(
+uint8_t addLog(
     logState &s,
     uint16_t &logIndex,
     unsigned long t,
@@ -305,11 +305,24 @@ void addLog(
     if (logIndex >= LOG_SIZE)
     {
         logIndex = LOG_SIZE - 1;
+        return 1;
     }
+    return 0;
+    
 }
 
-void saveLogsToFlash(logState *buffer) {
-    File file = LittleFS.open("/logs.bin", FILE_WRITE);
+void saveLogsToFlash(logState *buffer, uint16_t packetIndex)
+{
+    // Premier paquet : on supprime l'ancien fichier
+    if (packetIndex == 0)
+    {
+        if (LittleFS.exists("/logs.bin"))
+        {
+            LittleFS.remove("/logs.bin");
+        }
+    }
+
+    File file = LittleFS.open("/logs.bin", FILE_APPEND);
 
     if (!file)
     {
@@ -317,17 +330,90 @@ void saveLogsToFlash(logState *buffer) {
         return;
     }
 
+    const size_t packetSize = LOG_SIZE * sizeof(logState);
+
     size_t written = file.write(
         (uint8_t*)buffer,
-        LOG_SIZE * sizeof(logState));
+        packetSize);
 
     file.close();
 
-    Serial.print("Octets ecrits : ");
-    Serial.println(written);
+    if (written != packetSize)
+    {
+        Serial.println("Erreur ecriture");
+    }
 }
 
-void loadLogsFromFlash(logState *buffer) {
+void sendLogCSV(logState &s)
+{
+    Serial.print(s.t);
+
+    // Accélérations Q4
+    Serial.print(",");
+    Serial.print((float)s.ax / Q4_SCALE, 4);
+    Serial.print(",");
+    Serial.print((float)s.ay / Q4_SCALE, 4);
+    Serial.print(",");
+    Serial.print((float)s.az / Q4_SCALE, 4);
+
+    // Quaternion rotation
+    Serial.print(",");
+    Serial.print((float)s.qw / Q14_SCALE, 6);
+    Serial.print(",");
+    Serial.print((float)s.qx / Q14_SCALE, 6);
+    Serial.print(",");
+    Serial.print((float)s.qy / Q14_SCALE, 6);
+    Serial.print(",");
+    Serial.print((float)s.qz / Q14_SCALE, 6);
+
+    // Quaternion game
+    Serial.print(",");
+    Serial.print((float)s.gqw / Q14_SCALE, 6);
+    Serial.print(",");
+    Serial.print((float)s.gqx / Q14_SCALE, 6);
+    Serial.print(",");
+    Serial.print((float)s.gqy / Q14_SCALE, 6);
+    Serial.print(",");
+    Serial.print((float)s.gqz / Q14_SCALE, 6);
+
+    // Altitude
+    Serial.print(",");
+    Serial.print((float)s.altitude / Q6_SCALE, 3);
+
+    Serial.print(",");
+    Serial.print(s.p0, 3);
+
+    // Intégrateurs
+    Serial.print(",");
+    Serial.print((float)s.eta_yaw / Q6_SCALE, 4);
+    Serial.print(",");
+    Serial.print((float)s.eta_pitch / Q6_SCALE, 4);
+    Serial.print(",");
+    Serial.print((float)s.eta_roll / Q6_SCALE, 4);
+
+    // Anciennes projections
+    Serial.print(",");
+    Serial.print((float)s.old_yaw / Q14_SCALE, 6);
+    Serial.print(",");
+    Serial.print((float)s.old_pitch / Q14_SCALE, 6);
+    Serial.print(",");
+    Serial.print((float)s.old_roll / Q14_SCALE, 6);
+
+    // Commandes
+    Serial.print(",");
+    Serial.print(s.ctrl_yaw);
+    Serial.print(",");
+    Serial.print(s.ctrl_pitch);
+    Serial.print(",");
+    Serial.print(s.ctrl_roll);
+
+    // ESC
+    Serial.print(",");
+    Serial.println(s.esc);
+}
+
+void sendLogsCSVFromFlash()
+{
     File file = LittleFS.open("/logs.bin", FILE_READ);
 
     if (!file)
@@ -336,18 +422,6 @@ void loadLogsFromFlash(logState *buffer) {
         return;
     }
 
-    size_t readBytes = file.read(
-        (uint8_t*)buffer,
-        LOG_SIZE * sizeof(logState));
-
-    file.close();
-
-    // Serial.print("Octets lus : ");
-    // Serial.println(readBytes);
-}
-
-void sendLogsCSV(logState *buffer)
-{
     Serial.println(
         "t,"
         "ax,ay,az,"
@@ -359,90 +433,14 @@ void sendLogsCSV(logState *buffer)
         "ctrl_yaw,ctrl_pitch,ctrl_roll,"
         "esc");
 
-    for (int i = 0; i < LOG_SIZE; i++)
+    logState log;
+
+    while (file.read((uint8_t*)&log, sizeof(logState)) == sizeof(logState))
     {
-        logState &s = buffer[i];
-
-        Serial.print(s.t);
-
-        // Accélérations Q4
-        Serial.print(",");
-        Serial.print((float)s.ax / Q4_SCALE, 4);
-
-        Serial.print(",");
-        Serial.print((float)s.ay / Q4_SCALE, 4);
-
-        Serial.print(",");
-        Serial.print((float)s.az / Q4_SCALE, 4);
-
-        // Quaternion rotation Q14
-        Serial.print(",");
-        Serial.print((float)s.qw / Q14_SCALE, 6);
-
-        Serial.print(",");
-        Serial.print((float)s.qx / Q14_SCALE, 6);
-
-        Serial.print(",");
-        Serial.print((float)s.qy / Q14_SCALE, 6);
-
-        Serial.print(",");
-        Serial.print((float)s.qz / Q14_SCALE, 6);
-
-        // Quaternion game Q14
-        Serial.print(",");
-        Serial.print((float)s.gqw / Q14_SCALE, 6);
-
-        Serial.print(",");
-        Serial.print((float)s.gqx / Q14_SCALE, 6);
-
-        Serial.print(",");
-        Serial.print((float)s.gqy / Q14_SCALE, 6);
-
-        Serial.print(",");
-        Serial.print((float)s.gqz / Q14_SCALE, 6);
-
-        // Altitude Q6
-        Serial.print(",");
-        Serial.print((float)s.altitude / Q6_SCALE, 3);
-
-        // p0
-        Serial.print(",");
-        Serial.print(s.p0, 3);
-
-        // Intégrateurs Q6
-        Serial.print(",");
-        Serial.print((float)s.eta_yaw / Q6_SCALE, 4);
-
-        Serial.print(",");
-        Serial.print((float)s.eta_pitch / Q6_SCALE, 4);
-
-        Serial.print(",");
-        Serial.print((float)s.eta_roll / Q6_SCALE, 4);
-
-        // Old projections Q14
-        Serial.print(",");
-        Serial.print((float)s.old_yaw / Q14_SCALE, 6);
-
-        Serial.print(",");
-        Serial.print((float)s.old_pitch / Q14_SCALE, 6);
-
-        Serial.print(",");
-        Serial.print((float)s.old_roll / Q14_SCALE, 6);
-
-        // Commandes
-        Serial.print(",");
-        Serial.print(s.ctrl_yaw);
-
-        Serial.print(",");
-        Serial.print(s.ctrl_pitch);
-
-        Serial.print(",");
-        Serial.print(s.ctrl_roll);
-
-        // ESC
-        Serial.print(",");
-        Serial.println(s.esc);
+        sendLogCSV(log);
     }
+
+    file.close();
 }
 
 void checkUartAndTriggerDump(uint8_t sync_state, logState *buffer)
@@ -476,8 +474,7 @@ void checkUartAndTriggerDump(uint8_t sync_state, logState *buffer)
                     // =========================
                     // TRIGGER DUMP CSV
                     // =========================
-                    loadLogsFromFlash(buffer);
-                    sendLogsCSV(buffer);
+                    sendLogsCSVFromFlash();
                 }
                 else
                 {

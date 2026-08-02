@@ -49,7 +49,7 @@
 #define binpt_pitch 4           // mise à l'échelle pitch (puissance de 2 car quantification en virgule fixe)
 #define binpt_roll 4            // mise à l'échelle roll (puissance de 2 car quantification en virgule fixe)
 
-#define LOG_SIZE 1000
+#define LOG_SIZE 50             // 50 logs bufferisés avant écriture en flash
 
 
 #endif

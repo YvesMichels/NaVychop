@@ -85,9 +85,14 @@ unsigned long t_target = 0;
 int32_t delta_t_loop; // décallage entre le temps mesuré et le temps 
 
 // logs 
+constexpr uint8_t LOG_IDLE      = 0;
+constexpr uint8_t LOG_RECORDING = 1;
+constexpr uint8_t LOG_STOPPING  = 2;
 logState logBuffer[LOG_SIZE];
+//logState logBuffer[LOG_SIZE];
 uint16_t logIndex = 0;
-uint8_t save_en = 0;
+uint16_t flash_logIndex = 0;
+uint8_t save_en = LOG_IDLE;
 uint8_t sync_state = 0;
 
 bool readVisionFrame(vision_frame_t &out)
@@ -236,6 +241,7 @@ void setup()
 
     Serial.println("LittleFS OK");
 
+
     // synchronisation du module de vision et initialisation du temps
     pinMode(32, OUTPUT);
     digitalWrite(32, HIGH);
@@ -344,13 +350,16 @@ void loop()
 
     motors_control(servo1, servo2, servo3, servo4, esc);
 
-    if(save_en == 1) {
-        addLog(logBuffer[logIndex], logIndex, t_cur-t_0, accel[0], accel[1], accel[2], q_M_RV, q_M_GRV, att_states, control_states, esc);
+    if(save_en == LOG_RECORDING) {
+        if(addLog(logBuffer[logIndex], logIndex, t_cur-t_0, accel[0], accel[1], accel[2], q_M_RV, q_M_GRV, att_states, control_states, esc) == 1)
+        {
+            saveLogsToFlash(logBuffer, flash_logIndex);
+            flash_logIndex += 1;
+            logIndex = 0;
+        }
     }
-    if(save_en == 2) {
-        saveLogsToFlash(logBuffer);
-        sendLogsCSV(logBuffer);
-        save_en = 0;
+    if(save_en == LOG_STOPPING && logIndex == 0) {
+        save_en = LOG_IDLE;    // met fin à l'enrregistrement si demandé et paquet complet
     }
     checkUartAndTriggerDump(sync_state, logBuffer);
 

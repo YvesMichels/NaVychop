@@ -236,9 +236,9 @@ void lora_failsafe(uint8_t lora_cmd[4], uint32_t last_lora_ms, uint32_t now_ms, 
         // FAILSAFE MODE
 
         lora_cmd[0] = 0;       // flag désactivé
-        lora_cmd[1] = 0;       // throttle coupé (ou remplacé par idle si tu veux)
-        lora_cmd[2] = old_value; // maintien dernière consigne yaw
-        lora_cmd[3] = 127;     // pitch neutre
+        lora_cmd[1] = 1;       // motor=0, yaw=31
+        lora_cmd[2] = 247;     // yaw=31, pitch=31
+        lora_cmd[3] = 223;     // pitch=31, roll=31
 
         return;
     }

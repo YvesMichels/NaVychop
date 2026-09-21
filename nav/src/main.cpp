@@ -335,18 +335,31 @@ void loop()
         // Hybridation vision
     }
 
-    
+    // --- Extraction des commandes au sol ---
     cmd_yaw = 0;//yaw_ref - 3.1415926f + ((float)lora_cmd[2])*0.0245436921875f; // entre 0 rad (0) et 2pi-epsilon rad (255) 
-    cmd_pitch = 0.5*(((float)lora_cmd[3])-127)/127; // entre -0.5 et 0.5 rad (environ +- 30 degrés)
-    cmd_roll = 0.25*(((float)lora_cmd[2])-127)/127; // entre -0.25 et 0.25 rad (environ +- 15 degrés)
+    //cmd_pitch = 0.5*(((float)lora_cmd[3])-127)/127; // entre -0.5 et 0.5 rad (environ +- 30 degrés)
+    //cmd_roll = 0.25*(((float)lora_cmd[2])-127)/127; // entre -0.25 et 0.25 rad (environ +- 15 degrés)
+    uint8_t motor_6 = (lora_cmd[1] >> 2) & 0x3F;
+
+    uint8_t yaw_6 = ((lora_cmd[1] & 0x03) << 4) |
+                ((lora_cmd[2] >> 4) & 0x0F);
+
+    uint8_t pitch_6 = ((lora_cmd[2] & 0x0F) << 2) |
+                    ((lora_cmd[3] >> 6) & 0x03);
+
+    uint8_t roll_6 = lora_cmd[3] & 0x3F;
+    cmd_pitch = 0.5*(((float)pitch_6)-32)/32; // entre -0.5 et 0.5 rad (environ +- 30 degrés)
+    cmd_roll = 0.25*(((float)roll_6)-32)/32; // entre -0.25 et 0.25 rad (environ +- 15 degrés)
 
     control_update_inner(control_states, system_param.control_param, R_A_GRV, cmd_yaw, cmd_pitch, cmd_roll);
 
     servo1 = max(0, min(63, (int)((-control_states.ctrl_pitch) + 32)));
     servo2 = max(0, min(63, (int)((-control_states.ctrl_roll) + 32)));
     servo3 = max(0, min(63, (int)((-control_states.ctrl_roll) + 32)));
-    servo4 = max(10, min(43, (int)((-control_states.ctrl_yaw) + 32)));
-    esc = lora_cmd[1]/4;
+    //servo4 = max(10, min(43, (int)((-control_states.ctrl_yaw) + 32)));
+    servo4 = max(10, min(43, (int)yaw_6));
+    
+    esc = motor_6;
 
     motors_control(servo1, servo2, servo3, servo4, esc);
 

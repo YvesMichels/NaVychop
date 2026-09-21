@@ -1,5 +1,5 @@
 """
-param_tuner.py — Interface graphique de paramétrage temps réel
+Navychop.py — Interface graphique de paramétrage temps réel
 ==============================================================
 Dépendances : Python 3.8+, tkinter (standard), json, struct
 Communication physique : pip install pyserial pygame
@@ -306,6 +306,7 @@ class JoystickController:
         self.motor_val   = 0
         self.yaw_val     = 0.0
         self.pitch_val   = 0.0
+        self.roll_val    = 0.0
         self.status_cb   = None   # callback(str) appelé à chaque tick
 
     # ── Démarrage / arrêt ────────────────────────────────────────────────
@@ -377,8 +378,8 @@ class JoystickController:
 
                 # ── Mode HOLD ─────────────────────────────────────────────
                 if flight_mode == HOLD:
-                    if joystick.get_button(10): motor_hold = min(1.0, motor_hold + 0.02)
-                    if joystick.get_button(9):  motor_hold = max(0.0, motor_hold - 0.02)
+                    if joystick.get_button(10): motor_hold = min(1.0, motor_hold + 0.03)
+                    if joystick.get_button(9):  motor_hold = max(0.0, motor_hold - 0.03)
                     if time.time() - hold_time < 2.0:
                         r2_eff = 0.0
                     else:
@@ -389,12 +390,14 @@ class JoystickController:
                     r2_eff = r2
 
                 # ── Yaw ───────────────────────────────────────────────────
-                yaw_in = joystick.get_axis(0)
-                if abs(yaw_in) < self.DEADZONE_AXIS0:
-                    yaw_in = 0.0
-                if joystick.get_button(14): yaw += 0.01
-                if joystick.get_button(13): yaw -= 0.01
-                yaw_byte = max(0, min(255, int(255 * (yaw + yaw_in + 1) / 2)))
+                roll = joystick.get_axis(0)
+                if abs(roll) < self.DEADZONE_AXIS0:
+                    roll = 0.0
+                roll_byte = max(0, min(255, int(255 * (roll + 1) / 2)))
+                if joystick.get_button(14): yaw += 0.1
+                if joystick.get_button(13): yaw -= 0.1
+                yaw = min(1.0, max(-1.0, yaw))
+                yaw_byte = max(0, min(255, int(255 * (yaw + 1) / 2)))
 
                 # ── Pitch ─────────────────────────────────────────────────
                 pitch_in = joystick.get_axis(3)
@@ -419,16 +422,25 @@ class JoystickController:
 
                 # ── Envoi trame ───────────────────────────────────────────
                 if save_request != 0:
-                    self._link.send_cmd(TYPE_SAVE, save_request, yaw_byte, pitch_byte)
+                    self._link.send_cmd(TYPE_SAVE, save_request, 0, 0)
                     save_request = 0
                 else:
-                    self._link.send_cmd(TYPE_CMD, motor, yaw_byte, pitch_byte)
+                    motor_6 = (motor >> 2) & 0x3F
+                    yaw_6   = (yaw_byte >> 2) & 0x3F
+                    pitch_6 = (pitch_byte >> 2) & 0x3F
+                    roll_6  = (roll_byte >> 2) & 0x3F
+                    
+                    byte_1  = (motor_6 << 2) | (yaw_6 >> 4)
+                    byte_2 = ((yaw_6 & 0x0F) << 4) | (pitch_6 >> 2)
+                    byte_3 = ((pitch_6 & 0x03) << 6) | roll_6
+                    self._link.send_cmd(TYPE_CMD, byte_1, byte_2, byte_3)
 
                 # ── État observable ───────────────────────────────────────
                 self.mode_name  = ["SAFE", "MANUAL", "HOLD"][flight_mode]
                 self.motor_val  = motor
-                self.yaw_val    = yaw + yaw_in
+                self.yaw_val    = yaw
                 self.pitch_val  = pitch
+                self.roll_val   = roll
 
                 if self.status_cb:
                     self.status_cb()
@@ -436,7 +448,7 @@ class JoystickController:
             except Exception as e:
                 print(f"[JOY] Erreur boucle : {e}")
 
-            # ── Cadence 20 Hz ─────────────────────────────────────────────
+            # ── Cadence 5 Hz ─────────────────────────────────────────────
             elapsed = time.time() - t0
             sleep_t = max(0.0, 1.0 / self.LOOP_HZ - elapsed)
             time.sleep(sleep_t)
@@ -560,6 +572,7 @@ class PilotageWindow(tk.Toplevel):
             ("Moteur", "0"),
             ("Yaw",    "0.00 rad"),
             ("Pitch",  "0.00 rad"),
+            ("Roll",   "0.00 rad"),
         ]
         for col, (lbl, init) in enumerate(fields):
             cell = tk.Frame(telem_grid, bg=P["surface2"], padx=10, pady=6)
@@ -656,6 +669,7 @@ class PilotageWindow(tk.Toplevel):
             self._telem_vars["Moteur"].set(str(self._ctrl.motor_val))
             self._telem_vars["Yaw"].set(f"{self._ctrl.yaw_val:.2f} rad")
             self._telem_vars["Pitch"].set(f"{self._ctrl.pitch_val:.2f} rad")
+            self._telem_vars["Roll"].set(f"{self._ctrl.roll_val:.2f} rad")
 
     def _poll(self):
         """Rafraîchissement périodique même sans trame joystick (statut connexion)."""

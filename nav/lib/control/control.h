@@ -19,6 +19,15 @@ struct ControlParameters {
     float ctrl_bias_pitch;  // biais de position de la gouverne sur le pitch : calibration manuelle
     float ctrl_bias_roll;   // biais de position de la gouverne sur le roll : calibration manuelle
 
+    uint8_t ctrl_min_yaw;    // limite basse du controle de yaw
+    uint8_t ctrl_max_yaw;    // limite haute du controle de yaw
+    uint8_t ctrl_min_pitch;    // limite basse du controle de pitch
+    uint8_t ctrl_max_pitch;    // limite haute du controle de pitch
+    uint8_t ctrl_min_roll_r;    // limite basse du controle de roll aile droite
+    uint8_t ctrl_max_roll_r;    // limite haute du controle de roll aile droite
+    uint8_t ctrl_min_roll_l;    // limite basse du controle de roll aile gauche
+    uint8_t ctrl_max_roll_l;    // limite haute du controle de roll aile gauche
+
 };
 
 struct ControlState {

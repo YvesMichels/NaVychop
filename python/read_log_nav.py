@@ -6,7 +6,7 @@ import sys
 # =========================
 # CONFIG
 # =========================
-PORT = "COM4"
+PORT = "COM5"
 BAUDRATE = 115200
 OUTPUT_FILE = "log.csv"
 

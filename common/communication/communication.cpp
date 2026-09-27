@@ -248,12 +248,11 @@ uint8_t addLog(
     logState &s,
     uint16_t &logIndex,
     unsigned long t,
-    float ax,
-    float ay,
-    float az,
-    const Quaternion& q_rot,
+    float ax, float ay, float az,
+    float mag_x, float mag_y, float mag_z,
     const Quaternion& q_game,
     const AttitudeState& att,
+    uint8_t cmd_yaw, uint8_t cmd_pitch, uint8_t cmd_roll, 
     const ControlState& ctrl,
     int8_t esc)
 {
@@ -261,15 +260,14 @@ uint8_t addLog(
     s.t = t;
 
     // Accélération (Q4)
-    s.ax = (int16_t)roundf(ax * Q4_SCALE);
-    s.ay = (int16_t)roundf(ay * Q4_SCALE);
-    s.az = (int16_t)roundf(az * Q4_SCALE);
+    s.a_x = (int16_t)roundf(ax * Q4_SCALE);
+    s.a_y = (int16_t)roundf(ay * Q4_SCALE);
+    s.a_z = (int16_t)roundf(az * Q4_SCALE);
 
     // Quaternion rotation (Q14)
-    s.qw = (int16_t)roundf(q_rot.w * Q14_SCALE);
-    s.qx = (int16_t)roundf(q_rot.x * Q14_SCALE);
-    s.qy = (int16_t)roundf(q_rot.y * Q14_SCALE);
-    s.qz = (int16_t)roundf(q_rot.z * Q14_SCALE);
+    s.mag_x = (int16_t)roundf(mag_x * Q4_SCALE);
+    s.mag_y = (int16_t)roundf(mag_y * Q4_SCALE);
+    s.mag_z = (int16_t)roundf(mag_z * Q4_SCALE);
 
     // Quaternion game (Q14)
     s.gqw = (int16_t)roundf(q_game.w * Q14_SCALE);
@@ -279,7 +277,11 @@ uint8_t addLog(
 
     // Altitude (Q6)
     s.altitude = (int16_t)roundf(att.altitude * Q6_SCALE);
-    s.p0 = att.p0;
+    
+    // Commandes
+    s.cmd_yaw   = cmd_yaw;
+    s.cmd_pitch = cmd_pitch;
+    s.cmd_roll  = cmd_roll;
 
     // Intégrateurs (Q6)
     s.eta_yaw   = (int16_t)roundf(ctrl.eta_yaw   * Q6_SCALE);
@@ -287,9 +289,9 @@ uint8_t addLog(
     s.eta_roll  = (int16_t)roundf(ctrl.eta_roll  * Q6_SCALE);
 
     // Valeurs précédentes (Q14)
-    s.old_yaw   = (int16_t)roundf(ctrl.old_yaw   * Q14_SCALE);
-    s.old_pitch = (int16_t)roundf(ctrl.old_pitch * Q14_SCALE);
-    s.old_roll  = (int16_t)roundf(ctrl.old_roll  * Q14_SCALE);
+    s.proj_yaw   = (int16_t)roundf(ctrl.old_yaw   * Q14_SCALE);
+    s.proj_pitch = (int16_t)roundf(ctrl.old_pitch * Q14_SCALE);
+    s.proj_roll  = (int16_t)roundf(ctrl.old_roll  * Q14_SCALE);
 
     // Commandes
     s.ctrl_yaw   = (int8_t)roundf(ctrl.ctrl_yaw);
@@ -350,21 +352,19 @@ void sendLogCSV(logState &s)
 
     // Accélérations Q4
     Serial.print(",");
-    Serial.print((float)s.ax / Q4_SCALE, 4);
+    Serial.print((float)s.a_x / Q4_SCALE, 4);
     Serial.print(",");
-    Serial.print((float)s.ay / Q4_SCALE, 4);
+    Serial.print((float)s.a_y / Q4_SCALE, 4);
     Serial.print(",");
-    Serial.print((float)s.az / Q4_SCALE, 4);
+    Serial.print((float)s.a_z / Q4_SCALE, 4);
 
-    // Quaternion rotation
+    // Magneto
     Serial.print(",");
-    Serial.print((float)s.qw / Q14_SCALE, 6);
+    Serial.print((float)s.mag_x / Q4_SCALE, 6);
     Serial.print(",");
-    Serial.print((float)s.qx / Q14_SCALE, 6);
+    Serial.print((float)s.mag_y / Q4_SCALE, 6);
     Serial.print(",");
-    Serial.print((float)s.qy / Q14_SCALE, 6);
-    Serial.print(",");
-    Serial.print((float)s.qz / Q14_SCALE, 6);
+    Serial.print((float)s.mag_z / Q4_SCALE, 6);
 
     // Quaternion game
     Serial.print(",");
@@ -380,8 +380,13 @@ void sendLogCSV(logState &s)
     Serial.print(",");
     Serial.print((float)s.altitude / Q6_SCALE, 3);
 
+    // Commande sol
     Serial.print(",");
-    Serial.print(s.p0, 3);
+    Serial.print(s.cmd_yaw);
+    Serial.print(",");
+    Serial.print(s.cmd_pitch);
+    Serial.print(",");
+    Serial.print(s.cmd_roll);
 
     // Intégrateurs
     Serial.print(",");
@@ -393,11 +398,11 @@ void sendLogCSV(logState &s)
 
     // Anciennes projections
     Serial.print(",");
-    Serial.print((float)s.old_yaw / Q14_SCALE, 6);
+    Serial.print((float)s.proj_yaw / Q14_SCALE, 6);
     Serial.print(",");
-    Serial.print((float)s.old_pitch / Q14_SCALE, 6);
+    Serial.print((float)s.proj_pitch / Q14_SCALE, 6);
     Serial.print(",");
-    Serial.print((float)s.old_roll / Q14_SCALE, 6);
+    Serial.print((float)s.proj_roll / Q14_SCALE, 6);
 
     // Commandes
     Serial.print(",");
@@ -424,12 +429,13 @@ void sendLogsCSVFromFlash()
 
     Serial.println(
         "t,"
-        "ax,ay,az,"
-        "qw,qx,qy,qz,"
+        "a_x,a_y,a_z,"
+        "mag_x,mag_y,mag_z,"
         "gqw,gqx,gqy,gqz,"
-        "altitude,p0,"
+        "altitude,"
+        "cmd_yaw,cmd_pitch,cmd_roll,"
         "eta_yaw,eta_pitch,eta_roll,"
-        "old_yaw,old_pitch,old_roll,"
+        "proj_yaw,proj_pitch,proj_roll,"
         "ctrl_yaw,ctrl_pitch,ctrl_roll,"
         "esc");
 

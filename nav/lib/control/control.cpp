@@ -42,6 +42,15 @@ void control_gain_init(ControlParameters &gains)
     gains.ctrl_bias_yaw = 0.0f;     // biais de position de la gouverne sur le yaw : calibration manuelle
     gains.ctrl_bias_pitch = 0.0f;   // biais de position de la gouverne sur le pitch : calibration manuelle
     gains.ctrl_bias_roll = 0.0f;    // biais de position de la gouverne sur le roll : calibration manuelle
+
+    gains.ctrl_min_yaw = def_ctrl_min_yaw;        // limite basse du controle de yaw
+    gains.ctrl_max_yaw = def_ctrl_max_yaw;        // limite haute du controle de yaw
+    gains.ctrl_min_pitch = def_ctrl_min_pitch;    // limite basse du controle de pitch
+    gains.ctrl_max_pitch = def_ctrl_max_pitch;    // limite haute du controle de pitch
+    gains.ctrl_min_roll_r = def_ctrl_min_roll_r;  // limite basse du controle de roll aile droite
+    gains.ctrl_max_roll_r = def_ctrl_max_roll_r;  // limite haute du controle de roll aile droite
+    gains.ctrl_min_roll_l = def_ctrl_min_roll_l;  // limite basse du controle de roll aile gauche
+    gains.ctrl_max_roll_l = def_ctrl_max_roll_l;  // limite haute du controle de roll aile gauche
 }
 
 inline void bound_integrator(float &value, float max_value)
@@ -98,6 +107,11 @@ void control_update_inner(ControlState &state, ControlParameters &gains, float R
     else{
         state.init = 0;
     }
+
+    state.ctrl_yaw = min(32.0f, max(-31.0f, state.ctrl_yaw));
+    state.ctrl_pitch = min(32.0f, max(-31.0f, state.ctrl_pitch));
+    state.ctrl_roll = min(32.0f, max(-31.0f, state.ctrl_roll));
+
 
     // mise à jour pour la prochaine dérivée
     state.old_yaw = proj_yaw;

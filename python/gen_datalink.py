@@ -4,7 +4,7 @@ gen_datalink.py — Génération automatique de datalink.cpp depuis parameters.j
 Usage :
     python gen_datalink.py                        # lit ../parameters/parameters.json
     python gen_datalink.py chemin/parameters.json # chemin explicite
-    python gen_datalink.py --output chemin/datalink.cpp
+    python gen_datalink.py --output-cpp chemin/datalink.cpp
 
 Règle de protocole (issue du JSON) :
     tx_type = 0x10 + (id >> 8)
@@ -12,6 +12,11 @@ Règle de protocole (issue du JSON) :
     dat1    = LSB de la valeur int16
     dat2    = MSB de la valeur int16
     valeur physique = int16 / 2^binpt   (conversion écrite EN DUR dans le .cpp généré)
+
+Le type C++ de la conversion est lu dans le JSON (champ "type" du paramètre,
+sinon "type" de la catégorie, sinon "float" par défaut) :
+    - float / double            : (type)(raw) / 2^binpt
+    - autres types (uint8_t...) : simple cast (type)(raw), binpt ignoré
 
 Le champ C++ cible est :  <cpp_struct>.<cpp_field>
     ex : system_param.control_param.Kp_pitch
@@ -49,6 +54,22 @@ def param_routing(param_id: int) -> tuple[int, int]:
     return tx_type, id_lsb
 
 # ---------------------------------------------------------------------------
+# Expression C++ de conversion (dat1, dat2) -> type cible
+# ---------------------------------------------------------------------------
+def conversion_expr(cpp_type: str, binpt: int) -> str:
+    """Retourne l'expression C++ convertissant (dat1, dat2) en cpp_type."""
+    unsigned = cpp_type.startswith("uint") or cpp_type == "bool"
+    raw_t    = "uint16_t" if unsigned else "int16_t"
+    raw      = f"({raw_t})(dat1 | ((uint16_t)dat2 << 8))"
+
+    if cpp_type == "float":
+        return f"(float)({raw}) / {1 << binpt}.0f"
+    if cpp_type == "double":
+        return f"(double)({raw}) / {1 << binpt}.0"
+    # Types entiers / bool : simple cast, pas de division par 2^binpt
+    return f"({cpp_type})({raw})"
+
+# ---------------------------------------------------------------------------
 # Génération du corps de la fonction datalink_set_param_lora()
 # ---------------------------------------------------------------------------
 def generate_cases(categories: list) -> list[str]:
@@ -58,8 +79,9 @@ def generate_cases(categories: list) -> list[str]:
         if (tx_type == 0xXX && dat0 == 0xYY) {
             // param.cat_id.label  [binpt=N]
             system_param.control_param.Kp_pitch =
-                (float)((int16_t)(dat1 | (dat2 << 8))) / 256.0f;  // 2^8
+                (float)((int16_t)(dat1 | ((uint16_t)dat2 << 8))) / 256.0f;
         }
+    Le type de cast dépend du champ "type" du JSON (défaut : float).
     """
     lines = []
     first = True
@@ -73,8 +95,8 @@ def generate_cases(categories: list) -> list[str]:
             label    = p["label"]
             cpp_fld  = p.get("cpp_field", label)
             binpt    = int(p.get("binpt", 8))
-            scale    = 1 << binpt          # 2^binpt  (entier exact)
-            scalef   = f"{scale}.0f"       # représentation C float
+            cpp_type = p.get("type", cat.get("type", "float"))
+            expr     = conversion_expr(cpp_type, binpt)
 
             tx_type, dat0 = param_routing(pid)
 
@@ -84,17 +106,16 @@ def generate_cases(categories: list) -> list[str]:
             # Commentaire identifiant le paramètre
             lines.append(
                 f"    {keyword} (tx_type == 0x{tx_type:02X} && dat0 == 0x{dat0:02X})"
-                f"  /* param.{cat_id}.{label}  id={pid}  binpt={binpt} */"
+                f"  /* param.{cat_id}.{label}  id={pid}  type={cpp_type}  binpt={binpt} */"
             )
             lines.append("    {")
 
-            # Conversion int16 → float en dur avec le binpt du JSON
+            # Conversion int16 -> type cible, écrite en dur
             lines.append(
                 f"        {cpp_struct}.{cpp_fld} ="
             )
             lines.append(
-                f"            (float)((int16_t)(dat1 | ((uint16_t)dat2 << 8)))"
-                f" / {scalef};  // 1 / 2^{binpt}"
+                f"            {expr};  // type={cpp_type}, binpt={binpt}"
             )
             lines.append("    }")
 
@@ -146,6 +167,8 @@ def generate_datalink_cpp(data: dict, out_path: Path):
         f"//   dat1    = octet bas  de la valeur int16",
         f"//   dat2    = octet haut de la valeur int16",
         f"//   valeur physique = int16 / 2^binpt  (échelle écrite en dur ci-dessous)",
+        f"//   type C++ de la cible lu dans le JSON (float par défaut ; binpt ignoré",
+        f"//   pour les types entiers)",
         f"//",
         f"// Table des paramètres :",
     ] + table_lines + [

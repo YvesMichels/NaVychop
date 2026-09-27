@@ -42,14 +42,20 @@ uint8_t navMac[] = {0x02, 0xAA, 0xBB, 0xA0, 0x00, 0x00}; // adresse centrale de 
 uint8_t receiverMac[] = {0x02, 0xAA, 0xBB, 0xA0, 0x20, 0x20}; // adresse centrale sol
 static int16_t logs[32]; // vecteur d'intrumentation du code pour les vérifications
 
+// variables LoRa
 Adafruit_BMP3XX bmp;
 Adafruit_BNO08x bno08x;
 static uint32_t cpt_rv = 0;
 static uint32_t cpt_grv = 0;
 static uint32_t cpt_acc = 0;
-sh2_SensorValue_t sensorValue;
+static uint32_t cpt_mag = 0;
+uint8_t motor_6 = 0;   // commande LoRa moteur 6 bits (puissnace moteur par défaut à 0)
+uint8_t yaw_6 = 31;     // commande LoRa yaw 6 bits (lacet neutre à 31)
+uint8_t pitch_6 = 31;   // commande LoRa pitch 6 bits (tangage neutre à 31)
+uint8_t roll_6 = 31;    // commande LoRa roll 6 bits (roulis neutre à 31)
 
 // variables IMU
+sh2_SensorValue_t sensorValue;
 // commenté car directement calculé dans les appels : long reportIntervalUs = 1000*d_t;  // période de raffraichissement de l'UMI
 Quaternion q_M_GRV;
 Quaternion q_M_RV;
@@ -63,6 +69,7 @@ float R_A_M[3][3] = {
 float R_A_RV[3][3]; // matrice de rotation de l'avion (A) par rapport à la terre hybridée magnéto
 float R_A_GRV[3][3];// matrice de rotation de l'avion (A) par rapport à la terre sans magnéto
 float accel[3];     // vecteur d'accéleration
+float magneto[3];   // vecteur de champs magnétiques
 
 // variables altitude
 AttitudeParameters att_param;
@@ -72,11 +79,11 @@ AttitudeState att_states;
 ControlState control_states; 
 
 // variables moteurs
-int8_t servo1 = 90;
-int8_t servo2 = 90;
-int8_t servo3 = 90;
-int8_t servo4 = 90;
-int8_t esc = 0;
+uint8_t servo1 = 32;
+uint8_t servo2 = 32;
+uint8_t servo3 = 32;
+uint8_t servo4 = 32;
+uint8_t esc = 0;
 uint32_t servo_msg;
 
 // gestion du temps
@@ -174,7 +181,8 @@ void setup()
         while (1);
     }
 
-    bno08x.enableReport(SH2_ROTATION_VECTOR, 24500*d_t);
+    // bno08x.enableReport(SH2_ROTATION_VECTOR, 24500*d_t); // remplacée par le magnétomètre seul
+    bno08x.enableReport(SH2_MAGNETIC_FIELD_CALIBRATED, 24500*d_t);
     bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, 1000*d_t);
     bno08x.enableReport(SH2_LINEAR_ACCELERATION, 2865*d_t);
 
@@ -257,15 +265,15 @@ void setup()
 
 void loop()
 {
-    float proj_yaw;  // produit scalaire : projection yaw sur commande yaw
-    float proj_pitch;// produit scalaire : projection pitch sur commande pitch
-    float proj_roll; // produit scalaire : projection roll sur commande roll
-    float yaw_ref = 0.0;   // yaw de référence (calibration au démmarage ou sur demande)
-    float pitch_ref = 0.0;   // yaw de référence (calibration au démmarage ou sur demande)
+    float proj_yaw;         // produit scalaire : projection yaw sur commande yaw
+    float proj_pitch;       // produit scalaire : projection pitch sur commande pitch
+    float proj_roll;        // produit scalaire : projection roll sur commande roll
+    float yaw_ref = 0.0;    // yaw de référence (calibration au démmarage ou sur demande)
+    float pitch_ref = 0.0;  // yaw de référence (calibration au démmarage ou sur demande)
     float roll_ref = 0.0;   // yaw de référence (calibration au démmarage ou sur demande)
-    float cmd_yaw;   // commande angulaire yaw (lacet)
-    float cmd_pitch; // commande angulaire pitch (tangage)
-    float cmd_roll;  // commande angulaire roll (roulis)
+    float cmd_yaw;          // commande angulaire yaw (lacet)
+    float cmd_pitch;        // commande angulaire pitch (tangage)
+    float cmd_roll;         // commande angulaire roll (roulis)
 
     float pressure, temp;
     float qw, qx, qy, qz;
@@ -289,19 +297,26 @@ void loop()
             cpt_grv += 1;
         }
 
-        if (sensorValue.sensorId == SH2_ROTATION_VECTOR) {
+        /*if (sensorValue.sensorId == SH2_ROTATION_VECTOR) {
             q_M_RV = {sensorValue.un.rotationVector.real,
                 sensorValue.un.rotationVector.i,
                 sensorValue.un.rotationVector.j,
                 sensorValue.un.rotationVector.k};
             cpt_rv += 1;
-        }
+        }*/
 
         if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
             accel[0] = sensorValue.un.linearAcceleration.x;
             accel[1] = sensorValue.un.linearAcceleration.y;
             accel[2] = sensorValue.un.linearAcceleration.z;
             cpt_acc += 1;
+        }
+
+        if (sensorValue.sensorId == SH2_MAGNETIC_FIELD_CALIBRATED) {
+            magneto[0] = sensorValue.un.magneticField.x;
+            magneto[1] = sensorValue.un.magneticField.y;
+            magneto[2] = sensorValue.un.magneticField.z;
+            cpt_mag += 1;
         }
     }
 
@@ -315,13 +330,19 @@ void loop()
 
     lora_link_ok = lora_check_cmd(lora_cmd);
     datalink_set_param_lora(system_param, lora_cmd);
-    if (lora_link_ok && lora_cmd[0]==0x01)
+    if (lora_link_ok && lora_cmd[0]==0x01) // commandes de directions
     {
         last_lora_ms = t_cur;
         // mémorisation état utile (ex: yaw stick)
         old_yaw_cmd = lora_cmd[2];
+        motor_6 = (lora_cmd[1] >> 2) & 0x3F;
+        yaw_6 = ((lora_cmd[1] & 0x03) << 4) |
+                ((lora_cmd[2] >> 4) & 0x0F);
+        pitch_6 = ((lora_cmd[2] & 0x0F) << 2) |
+                    ((lora_cmd[3] >> 6) & 0x03);
+        roll_6 = lora_cmd[3] & 0x3F;
     }
-    if (lora_link_ok && lora_cmd[0]==0x02)
+    if (lora_link_ok && lora_cmd[0]==0x02) // commande de sauvegarde
     {
         last_lora_ms = t_cur;
         // mémorisation état utile (ex: yaw stick)
@@ -336,35 +357,23 @@ void loop()
     }
 
     // --- Extraction des commandes au sol ---
-    cmd_yaw = 0;//yaw_ref - 3.1415926f + ((float)lora_cmd[2])*0.0245436921875f; // entre 0 rad (0) et 2pi-epsilon rad (255) 
-    //cmd_pitch = 0.5*(((float)lora_cmd[3])-127)/127; // entre -0.5 et 0.5 rad (environ +- 30 degrés)
-    //cmd_roll = 0.25*(((float)lora_cmd[2])-127)/127; // entre -0.25 et 0.25 rad (environ +- 15 degrés)
-    uint8_t motor_6 = (lora_cmd[1] >> 2) & 0x3F;
-
-    uint8_t yaw_6 = ((lora_cmd[1] & 0x03) << 4) |
-                ((lora_cmd[2] >> 4) & 0x0F);
-
-    uint8_t pitch_6 = ((lora_cmd[2] & 0x0F) << 2) |
-                    ((lora_cmd[3] >> 6) & 0x03);
-
-    uint8_t roll_6 = lora_cmd[3] & 0x3F;
-    cmd_pitch = 0.5*(((float)pitch_6)-32)/32; // entre -0.5 et 0.5 rad (environ +- 30 degrés)
-    cmd_roll = 0.25*(((float)roll_6)-32)/32; // entre -0.25 et 0.25 rad (environ +- 15 degrés)
+    cmd_yaw = 0;    // pas d'asservissement sur le yaw
+    cmd_pitch = 0.5*(((float)pitch_6)-31)/32; // entre -0.5 et 0.5 rad (environ +- 30 degrés)
+    cmd_roll = 0.25*(((float)roll_6)-31)/32; // entre -0.25 et 0.25 rad (environ +- 15 degrés)
 
     control_update_inner(control_states, system_param.control_param, R_A_GRV, cmd_yaw, cmd_pitch, cmd_roll);
-
-    servo1 = max(0, min(63, (int)((-control_states.ctrl_pitch) + 32)));
-    servo2 = max(0, min(63, (int)((-control_states.ctrl_roll) + 32)));
-    servo3 = max(0, min(63, (int)((-control_states.ctrl_roll) + 32)));
-    //servo4 = max(10, min(43, (int)((-control_states.ctrl_yaw) + 32)));
-    servo4 = max(10, min(43, (int)yaw_6));
-    
+    // gouvernes de pitch et roll controlées par asservissement 
+    servo1 = max(system_param.control_param.ctrl_min_pitch, min(system_param.control_param.ctrl_max_pitch, (uint8_t)((-control_states.ctrl_pitch) + 32)));
+    servo2 = max(system_param.control_param.ctrl_min_roll_l, min(system_param.control_param.ctrl_max_roll_l, (uint8_t)((-control_states.ctrl_roll) + 32)));
+    servo3 = max(system_param.control_param.ctrl_min_roll_r, min(system_param.control_param.ctrl_max_roll_r, (uint8_t)((-control_states.ctrl_roll) + 32)));
+    // gouvernes de yaw et puissance moteur controlées directement via LoRa
+    servo4 = max(system_param.control_param.ctrl_min_yaw, min(system_param.control_param.ctrl_max_yaw, (uint8_t)yaw_6)); 
     esc = motor_6;
 
     motors_control(servo1, servo2, servo3, servo4, esc);
 
     if(save_en == LOG_RECORDING) {
-        if(addLog(logBuffer[logIndex], logIndex, t_cur-t_0, accel[0], accel[1], accel[2], q_M_RV, q_M_GRV, att_states, control_states, esc) == 1)
+        if(addLog(logBuffer[logIndex], logIndex, t_cur-t_0, accel[0], accel[1], accel[2], magneto[0], magneto[1], magneto[2], q_M_GRV, att_states, yaw_6, pitch_6, roll_6, control_states, esc) == 1)
         {
             saveLogsToFlash(logBuffer, flash_logIndex);
             flash_logIndex += 1;
@@ -383,3 +392,4 @@ void loop()
   if(delta_t_loop>0)
   {delay(delta_t_loop);}
 }
+

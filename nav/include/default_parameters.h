@@ -18,4 +18,13 @@ constexpr float def_max_eta_yaw = 0.0f;//900.0f;   // 0.9 d'écart pendant une s
 constexpr float def_max_eta_pitch = 300.0f; // 0.3 d'écart pendant une seconde
 constexpr float def_max_eta_roll = 100.0f;  // 0.1 d'écart pendant une seconde
 
+constexpr uint8_t def_ctrl_min_yaw = 15;     // limite basse du controle de yaw
+constexpr uint8_t def_ctrl_max_yaw = 41;    // limite haute du controle de yaw
+constexpr uint8_t def_ctrl_min_pitch = 0;    // limite basse du controle de pitch
+constexpr uint8_t def_ctrl_max_pitch = 63;  // limite haute du controle de pitch
+constexpr uint8_t def_ctrl_min_roll_r = 9;  // limite basse du controle de roll aile droite
+constexpr uint8_t def_ctrl_max_roll_r = 55; // limite haute du controle de roll aile droite
+constexpr uint8_t def_ctrl_min_roll_l = 21;  // limite basse du controle de roll aile gauche
+constexpr uint8_t def_ctrl_max_roll_l = 56; // limite haute du controle de roll aile gauche
+
 #endif

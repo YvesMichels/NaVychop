@@ -18,15 +18,14 @@ struct logState
     unsigned long t;
 
     // Accélération
-    int16_t ax;         // 4 bits fractionnaire
-    int16_t ay;         // 4 bits fractionnaire
-    int16_t az;         // 4 bits fractionnaire
+    int16_t a_x;         // 4 bits fractionnaire
+    int16_t a_y;         // 4 bits fractionnaire
+    int16_t a_z;         // 4 bits fractionnaire
 
-    // Quaternion rotation
-    int16_t qw;         // 14 bits fractionnaire
-    int16_t qx;         // 14 bits fractionnaire
-    int16_t qy;         // 14 bits fractionnaire
-    int16_t qz;         // 14 bits fractionnaire
+    // magneto
+    int16_t mag_x;         // 14 bits fractionnaire
+    int16_t mag_y;         // 14 bits fractionnaire
+    int16_t mag_z;         // 14 bits fractionnaire
 
     // Quaternion game rotation
     int16_t gqw;        // 14 bits fractionnaire
@@ -36,7 +35,6 @@ struct logState
 
     // Altitude / pression
     int16_t altitude;   // 6 bits fractionnaire
-    float p0;
 
     // Intégrateurs
     int16_t eta_yaw;    // 6 bits fractionnaire
@@ -44,11 +42,16 @@ struct logState
     int16_t eta_roll;   // 6 bits fractionnaire
 
     // Projections précédentes
-    int16_t old_yaw;    // 14 bits fractionnaire
-    int16_t old_pitch;  // 14 bits fractionnaire
-    int16_t old_roll;   // 14 bits fractionnaire
+    int16_t proj_yaw;    // 14 bits fractionnaire
+    int16_t proj_pitch;  // 14 bits fractionnaire
+    int16_t proj_roll;   // 14 bits fractionnaire
 
-    // Commandes
+    // Commandes sol
+    int8_t cmd_yaw;    // 0 bits fractionnaire
+    int8_t cmd_pitch;  // 0 bits fractionnaire
+    int8_t cmd_roll;   // 0 bits fractionnaire
+
+    // Commandes moteurs
     int8_t ctrl_yaw;    // 0 bits fractionnaire
     int8_t ctrl_pitch;  // 0 bits fractionnaire
     int8_t ctrl_roll;   // 0 bits fractionnaire
@@ -74,12 +77,11 @@ uint8_t addLog(
     logState &s, 
     uint16_t &logIndex, 
     unsigned long t,
-    float ax,
-    float ay,
-    float az,
-    const Quaternion& q_rot,
+    float ax, float ay, float az,
+    float mag_x, float mag_y, float mag_z,
     const Quaternion& q_game,
     const AttitudeState& att,
+    uint8_t cmd_yaw, uint8_t cmd_pitch, uint8_t cmd_roll, 
     const ControlState& ctrl,
     int8_t esc);
 void saveLogsToFlash(logState *buffer, uint16_t packetIndex);

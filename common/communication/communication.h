@@ -7,11 +7,6 @@
 #include "control.h"
 #include "navigation.h"
 
-#define binpt_yaw 8 // mise à l'échelle yaw (puissance de 2 car quantification en virgule fixe)
-#define binpt_pitch 4 // mise à l'échelle pitch (puissance de 2 car quantification en virgule fixe)
-#define binpt_roll 4 // mise à l'échelle roll (puissance de 2 car quantification en virgule fixe)
-#define nb_compress 50
-
 struct logState
 {
     // Temps
@@ -60,6 +55,34 @@ struct logState
     uint8_t esc;        // 0 bits fractionnaire
 };
 
+enum LinkState : uint8_t {
+    LINK_NO_FRAME = 0,   // démarrage : aucune trame pilote reçue
+    LINK_LOST     = 1,   // timeout dépassé
+    LINK_OK       = 2    // lien établi, commandes appliquées
+};
+
+struct CmdState {
+    // Sorties de commande (valeurs 6 bits)
+    uint8_t motor_6;
+    uint8_t yaw_6;
+    uint8_t pitch_6;
+    uint8_t roll_6;
+
+    // Demande de sauvegarde (événement : à consommer par main)
+    uint8_t save_req;
+    bool    save_pending;
+
+    // Supervision du lien
+    LinkState link;
+    uint32_t last_cmd_ms;     // dernière trame pilote valide (lien OK) / dernière trame de reprise
+    uint8_t  resume_count;    // trames consécutives de confirmation de reprise
+
+    // Diagnostic
+    uint32_t n_cmd;
+    uint32_t n_save;
+    uint16_t n_lost;          // nombre de passages en failsafe
+};
+
 void quantif_angle(int16_t* delta_angle, float angle, int16_t* last_angle, uint8_t nbits, uint8_t binpt);
 void send_quaternions_and_logs(float *q_grv, float *q_rv, int16_t *logs);
 
@@ -71,7 +94,13 @@ void motors_control(int8_t servo1, int8_t servo2, int8_t servo3, int8_t servo4, 
 
 bool decode_lora_frame_to_cmd(uint8_t *rx_buffer, uint8_t *cmd);
 bool lora_check_cmd(uint8_t *lora_cmd);
-void lora_failsafe(uint8_t lora_cmd[4], uint32_t last_lora_ms, uint32_t now_ms, uint8_t old_value, uint16_t timeout_ms);
+//void lora_failsafe(uint8_t lora_cmd[4], uint32_t last_lora_ms, uint32_t now_ms, uint8_t old_value, uint16_t timeout_ms);
+void lora_cmd_init(CmdState &c);
+// Traite UNE trame valide (types 0x01 / 0x02, les autres sont ignorés).
+void lora_cmd_set(CmdState &c, const uint8_t lora_cmd[4], uint32_t now_ms);
+// À appeler à chaque tour, trame reçue ou non : timeout et failsafe.
+void lora_cmd_supervise(CmdState &c, uint32_t now_ms);
+
 
 uint8_t addLog(
     logState &s, 

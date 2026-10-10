@@ -1,16 +1,7 @@
 #include <Arduino.h>
 #include <LoRa.h>
-#include "config.h"
+#include "config.h"         // SYNC_1..4, TRANSFORM_FORMAT, TRANSFORM_FORMAT, LORA_* : source unique
 #include "communication.h"
-
-
-#define SYNC_1 0xAA
-#define SYNC_2 0x55
-#define SYNC_3 0xCC
-#define SYNC_4 0x33
-#define TRANSFORM_FORMAT 0x42
-#define QUATERNION_FORMAT 0x51
-#define LORA_FRAME_SIZE 7 // 2 octest sync, 1 octet type, 3 octets data, 1 octet CRC
 
 #define Q4_SCALE   16.0f
 #define Q6_SCALE   64.0f
@@ -166,70 +157,28 @@ bool decode_lora_frame_to_cmd(uint8_t *rx_buffer, uint8_t *cmd)
     return true;
 }
 
-bool lora_check_cmd(uint8_t lora_cmd[4]){
-    // =============================
-    // Réception LoRa non bloquante
-    // =============================
+bool lora_check_cmd(uint8_t *lora_cmd)
+{
+    const int packetSize = LoRa.parsePacket();
+    if (packetSize == 0) return false;
 
-    uint8_t lora_rx_buffer[LORA_FRAME_SIZE];
-    int packetSize = LoRa.parsePacket();
     bool msg_ok = false;
 
-    if (packetSize)
+    // Une trame = un paquet LoRa de exactement 7 octets
+    if (packetSize == LORA_FRAME_SIZE)
     {
-        // Taille strictement attendue
-        if (packetSize == LORA_FRAME_SIZE)
-        {
-            // Lecture FIFO complète
-            for (int i = 0; i < LORA_FRAME_SIZE; i++)
-            {
-                lora_rx_buffer[i] = LoRa.read();
-            }
-
-            // Décodage protocole applicatif
-            if (decode_lora_frame_to_cmd(lora_rx_buffer, lora_cmd))
-            {
-                // =============================
-                // Exploitation commandes
-                // =============================
-
-                uint8_t type = lora_cmd[0];
-
-                switch(type)
-                {
-                    // Commande manuelle
-                    case 0x01:
-                    {
-                        msg_ok = true;
-                        break;
-                    }
-
-                    // Paramètres / config
-                    case 0x02:
-                    {
-                        msg_ok = true;
-                        break;
-                    }
-
-                    default:
-                        break;
-                }
-            }
-        }
-
-        // Vidage sécurité FIFO si taille incorrecte
-        while (LoRa.available())
-        {
-            LoRa.read();
-        }
-
-        // Retour immédiat RX
-        //LoRa.receive();
+        uint8_t rx[LORA_FRAME_SIZE];
+        for (int i = 0; i < LORA_FRAME_SIZE; i++) rx[i] = LoRa.read();
+        // Synchro AA 55 + CRC ; lora_cmd = {TYPE, DAT0, DAT1, DAT2} si valide, quel que soit le TYPE
+        msg_ok = decode_lora_frame_to_cmd(rx, lora_cmd);
     }
+
+    // Vidage de sécurité de la FIFO
+    while (LoRa.available()) LoRa.read();
     return msg_ok;
 }
 
-void lora_failsafe(uint8_t lora_cmd[4], uint32_t last_lora_ms, uint32_t now_ms, uint8_t old_value, uint16_t timeout_ms)
+/*void lora_failsafe(uint8_t lora_cmd[4], uint32_t last_lora_ms, uint32_t now_ms, uint8_t old_value, uint16_t timeout_ms)
 {
     if ((now_ms - last_lora_ms) > timeout_ms)
     {
@@ -242,6 +191,97 @@ void lora_failsafe(uint8_t lora_cmd[4], uint32_t last_lora_ms, uint32_t now_ms, 
 
         return;
     }
+}*/
+
+static void cmd_apply_safe(CmdState &c)
+{
+    c.motor_6 = CMD_MOTOR_SAFE;
+    c.yaw_6   = CMD_AXIS_NEUTRAL;
+    c.pitch_6 = CMD_AXIS_NEUTRAL;
+    c.roll_6  = CMD_AXIS_NEUTRAL;
+}
+
+void lora_cmd_init(CmdState &c)
+{
+    cmd_apply_safe(c);
+    c.save_req     = 0;
+    c.save_pending = false;
+    c.link         = LINK_NO_FRAME;
+    c.last_cmd_ms  = 0;
+    c.resume_count = 0;
+    c.n_cmd = 0;
+    c.n_save = 0;
+    c.n_lost = 0;
+}
+
+void lora_cmd_set(CmdState &c, const uint8_t f[4], uint32_t now_ms)
+{
+    const uint8_t type = f[0];
+
+    if (type == LORA_FRAME_CMD)
+    {
+        // Décodage complet dans des variables locales : aucune écriture partielle
+        const uint8_t motor = (f[1] >> 2) & 0x3F;
+        const uint8_t yaw   = ((f[1] & 0x03) << 4) | ((f[2] >> 4) & 0x0F);
+        const uint8_t pitch = ((f[2] & 0x0F) << 2) | ((f[3] >> 6) & 0x03);
+        const uint8_t roll  = f[3] & 0x3F;
+
+        if (c.link != LINK_OK)
+        {
+            // Reprise (ou premier lien) : confirmation par trames rapprochées
+            if (c.resume_count == 0 ||
+                (uint32_t)(now_ms - c.last_cmd_ms) > LORA_RESUME_GAP_MS)
+            {
+                c.resume_count = 1;
+            }
+            else
+            {
+                c.resume_count++;
+            }
+            c.last_cmd_ms = now_ms;
+
+            if (c.resume_count < LORA_RESUME_FRAMES)
+                return;                       // pas encore appliqué : failsafe maintenu
+
+            c.link = LINK_OK;
+            c.resume_count = 0;
+        }
+
+        c.last_cmd_ms = now_ms;
+        c.motor_6 = motor;
+        c.yaw_6   = yaw;
+        c.pitch_6 = pitch;
+        c.roll_6  = roll;
+        c.n_cmd++;
+    }
+    else if (type == LORA_FRAME_SAVE)
+    {
+        // Seules les valeurs 1 (start) et 2 (stop) sont acceptées
+        if (f[1] == 1 || f[1] == 2)
+        {
+            c.save_req     = f[1];
+            c.save_pending = true;
+            c.n_save++;
+            if (c.link == LINK_OK)
+                c.last_cmd_ms = now_ms;       // le lien est vivant, mais ne rétablit pas le contrôle
+        }
+    }
+    // autres types (paramètres 0x10+, inconnus) : ignorés ici
+}
+
+void lora_cmd_supervise(CmdState &c, uint32_t now_ms)
+{
+    if (c.link == LINK_OK &&
+        (uint32_t)(now_ms - c.last_cmd_ms) > LORA_FAILSAFE_TIMEOUT_MS)
+    {
+        c.link = LINK_LOST;
+        c.resume_count = 0;
+        c.n_lost++;
+    }
+
+    // Réécrit les sorties neutres à chaque tour tant que le lien n'est pas OK
+    if (c.link != LINK_OK)
+        cmd_apply_safe(c);
 }
 
 uint8_t addLog(

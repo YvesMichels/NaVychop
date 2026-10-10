@@ -12,9 +12,9 @@ La centrale de navigation transmet périodiquement une trame contenant les comma
 
 \* servo 1 : profondeur ;
 
-\* servo 2 : gouverne d'aile droite;
+\* servo 2 : gouverne d'aile gauche;
 
-\* servo 3 : gouverne d'aile gauche;
+\* servo 3 : gouverne d'aile droite;
 
 \* servo 4 : lacet ;
 
@@ -854,9 +854,9 @@ Les pins sont :
 
 &#x20; servo1.attach(9);  // queue
 
-&#x20; servo2.attach(5);  // aile droite
+&#x20; servo2.attach(5);  // aile gauche
 
-&#x20; servo3.attach(6);  // aile gauche
+&#x20; servo3.attach(6);  // aile droite
 
 &#x20; servo4.attach(10); // non branché
 

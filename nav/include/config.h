@@ -34,7 +34,9 @@
 #define SYNC_3 0xCC             // octet de synchronisation 3
 #define SYNC_4 0x33             // octet de synchronisation 4
 #define TRANSFORM_FORMAT 0x42   // identifiant module vision "informations de transformation 2 trames images successives"
+#define QUATERNION_FORMAT 0x51  // identifiant des logs de quaternions
 #define VISION_FRAME_SIZE 76    // nombre d'octets envoyé par le module de vision
+#define LORA_FRAME_SIZE 7       // 2 octest sync, 1 octet type, 3 octets data, 1 octet CRC
 
 #define size_msg 5              // taille des messages vers le micro-controleur des moteurs de l'avion
 
@@ -44,10 +46,20 @@
 #define nb_it_sparce 25         // nombre d'it entre deux envois "éparses" (25@25Hz => 1 par seconde)
 #define size_buffer_sparce 250  // envoi plus lent (250*1 secondes => 250 secondes)
 
-#define max_cpt_lora 3000       // temps max autorisé sans communication (ms)
 #define binpt_yaw 8             // mise à l'échelle yaw (puissance de 2 car quantification en virgule fixe)
 #define binpt_pitch 4           // mise à l'échelle pitch (puissance de 2 car quantification en virgule fixe)
 #define binpt_roll 4            // mise à l'échelle roll (puissance de 2 car quantification en virgule fixe)
+
+// --- Liaison LoRa : supervision / failsafe ---
+#define LORA_FAILSAFE_TIMEOUT_MS  1000   // sans trame pilote valide (0x01/0x02) -> failsafe
+#define LORA_RESUME_FRAMES        1      // trames 0x01 consécutives pour reprendre le contrôle (1 = pas de confirmation)
+#define LORA_RESUME_GAP_MS        500    // écart max entre deux trames de la confirmation
+
+#define LORA_FRAME_CMD            0x01   // commandes de vol
+#define LORA_FRAME_SAVE           0x02   // demande de sauvegarde des logs
+
+#define CMD_MOTOR_SAFE            0      // moteur coupé en failsafe
+#define CMD_AXIS_NEUTRAL          31     // neutre des gouvernes (6 bits)
 
 #define LOG_SIZE 50             // 50 logs bufferisés avant écriture en flash
 

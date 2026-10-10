@@ -403,7 +403,7 @@ class JoystickController:
                 pitch_in = joystick.get_axis(3)
                 if abs(pitch_in) < self.DEADZONE_AXIS3:
                     pitch_in = 0.0
-                pitch = max(-1.0, min(1.0, pitch_in + pitch_offset))
+                pitch = max(-1.0, min(1.0, - pitch_in + pitch_offset))
                 pitch_byte = int(((pitch + 1) / 2) * 255)
                 if joystick.get_button(12): pitch_offset += 0.01
                 if joystick.get_button(11): pitch_offset -= 0.01

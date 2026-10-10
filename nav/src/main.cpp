@@ -32,6 +32,7 @@ typedef struct {
 parameters system_param;
 
 uint8_t lora_cmd[4] = {1, 0, 0, 127};
+CmdState cmd_state;
 static uint32_t last_lora_ms = 0;
 static uint8_t old_yaw_cmd = 0;
 bool lora_link_ok = false;
@@ -227,6 +228,9 @@ void setup()
     LoRa.setCodingRate4(LORA_CR4);
     LoRa.enableCrc();
 
+    // Initialisation de la structure de communication
+    lora_cmd_init(cmd_state);
+
     Serial.println("LoRa ready");
     
     delay(1000);
@@ -328,27 +332,29 @@ void loop()
     computeRotationMatrix(q_M_GRV.w, q_M_GRV.x, q_M_GRV.y, q_M_GRV.z, R_M_GRV);
     rotMult(R_A_GRV, R_A_M, R_M_GRV);
 
-    lora_link_ok = lora_check_cmd(lora_cmd);
-    datalink_set_param_lora(system_param, lora_cmd);
-    if (lora_link_ok && lora_cmd[0]==0x01) // commandes de directions
+    // --- Réception LoRa ---
+
+    lora_cmd_supervise(cmd_state, t_cur);            // 1) timeout de 1000 ms, avant toute nouvelle trame temps de référence de la boucle en cours
+
+    if (lora_check_cmd(lora_cmd))                     // 2) trame valide (taille, synchro, CRC), tout TYPE
     {
-        last_lora_ms = t_cur;
-        // mémorisation état utile (ex: yaw stick)
-        old_yaw_cmd = lora_cmd[2];
-        motor_6 = (lora_cmd[1] >> 2) & 0x3F;
-        yaw_6 = ((lora_cmd[1] & 0x03) << 4) |
-                ((lora_cmd[2] >> 4) & 0x0F);
-        pitch_6 = ((lora_cmd[2] & 0x0F) << 2) |
-                    ((lora_cmd[3] >> 6) & 0x03);
-        roll_6 = lora_cmd[3] & 0x3F;
+        if (lora_cmd[0] >= 0x10)                      // paramètres
+            {datalink_set_param_lora(system_param, lora_cmd);}
+        lora_cmd_set(cmd_state, lora_cmd, t_cur);    // ignore les types hors 0x01 / 0x02
     }
-    if (lora_link_ok && lora_cmd[0]==0x02) // commande de sauvegarde
+
+    // Événement de sauvegarde (consommé une seule fois)
+    if (cmd_state.save_pending)
     {
-        last_lora_ms = t_cur;
-        // mémorisation état utile (ex: yaw stick)
-        save_en = lora_cmd[1];
+        save_en = cmd_state.save_req;
+        cmd_state.save_pending = false;
     }
-    lora_failsafe(lora_cmd, last_lora_ms, t_cur, old_yaw_cmd, 1000);
+
+    // Sorties de commande (sécurité automatique si lien non OK)
+    motor_6 = cmd_state.motor_6;
+    yaw_6   = cmd_state.yaw_6;
+    pitch_6 = cmd_state.pitch_6;
+    roll_6  = cmd_state.roll_6;
 
     // --- Vision ---
     vision_frame_t vf;

@@ -405,8 +405,8 @@ class JoystickController:
                     pitch_in = 0.0
                 pitch = max(-1.0, min(1.0, - pitch_in + pitch_offset))
                 pitch_byte = int(((pitch + 1) / 2) * 255)
-                if joystick.get_button(12): pitch_offset += 0.01
-                if joystick.get_button(11): pitch_offset -= 0.01
+                if joystick.get_button(12): pitch_offset -= 0.03
+                if joystick.get_button(11): pitch_offset += 0.03
 
                 # ── Moteur ────────────────────────────────────────────────
                 if   flight_mode == SAFE:   motor = 0

@@ -1,93 +1,428 @@
-# Navychop
+# navychop
 
+**Autonomous flight experimentation platform — RC aircraft / embedded navigation / AI-assisted development**
 
+`navychop` est un projet **scientifique, technique et ludique** consacré à l'expérimentation autour des pilotes autonomes pour aéronefs.
 
-## Getting started
+L'objectif est de construire, avec des moyens essentiellement amateurs, une chaîne complète de navigation et de pilotage autonome : **capteurs → estimation d'état → contrôle → actionneurs → télémétrie**, tout en explorant les limites de ce qui peut être réalisé avec une architecture embarquée légère.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+Le projet sert également d'expérimentation sur une autre question :
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+> **Jusqu'où un projet technique développé par une seule personne, assistée par des IA génératives, peut-il aller face aux méthodes et moyens traditionnellement disponibles dans l'industrie ?**
 
-## Add your files
+Il ne s'agit pas de reproduire une architecture avionique industrielle certifiée, mais de mesurer concrètement les capacités, les limites, les compromis et les difficultés rencontrées lorsqu'une approche individuelle s'appuie fortement sur les outils modernes d'IA.
 
-* [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+---
 
+## Objectifs
+
+Le projet poursuit plusieurs objectifs complémentaires :
+
+* expérimenter les techniques de **navigation inertielle et de pilotage automatique** ;
+* développer une centrale de navigation embarquée autour d'un microcontrôleur ;
+* exploiter et fusionner plusieurs capteurs : IMU, baromètre, magnétomètre, GPS et éventuellement vision ;
+* développer des lois de commande adaptées à un aéronef léger ;
+* expérimenter différentes architectures d'estimation et de contrôle ;
+* étudier les contraintes de calcul, de mémoire, de latence et de robustesse d'un système embarqué ;
+* développer une chaîne complète allant du matériel embarqué au poste sol ;
+* réaliser des essais en conditions réelles sur un aéronef radiocommandé ;
+* utiliser les IA génératives comme **assistant de développement et de recherche**, et mesurer concrètement leur apport.
+
+Une attention particulière est portée à la distinction entre :
+
+1. ce qui est **théoriquement possible** ;
+2. ce qui est **réalisable avec le matériel disponible** ;
+3. ce qui fonctionne réellement **en simulation ou sur banc** ;
+4. ce qui fonctionne **en vol**.
+
+---
+
+## Philosophie du projet
+
+`navychop` est volontairement développé comme un projet personnel à vocation expérimentale.
+
+Le but n'est pas de produire immédiatement un système industriel, certifiable ou commercialisable. Le but est au contraire de pouvoir tester rapidement des idées, constater leurs limites et conserver les résultats des expériences.
+
+Le projet cherche notamment à répondre expérimentalement à des questions telles que :
+
+* Quelle complexité de pilote automatique peut être embarquée sur une architecture très contrainte ?
+* Quelle précision peut-on obtenir avec des capteurs grand public ?
+* Jusqu'où peut-on pousser une architecture développée par une seule personne ?
+* Quelles parties d'un système avionique nécessitent réellement une expertise spécialisée ?
+* Quelles tâches peuvent être efficacement déléguées à une IA générative ?
+* Où l'IA générative atteint-elle ses limites lorsqu'elle doit raisonner sur un système physique réel ?
+* Dans quelle mesure une personne assistée par IA peut-elle atteindre une productivité comparable à celle d'une petite équipe technique sur certaines tâches ?
+
+L'IA est donc considérée comme un **outil d'ingénierie**, et non comme une autorité technique.
+
+Les hypothèses proposées par les modèles sont vérifiées autant que possible par le calcul, la simulation, les mesures sur banc et les essais en vol.
+
+---
+
+# Architecture
+
+Le projet est organisé autour de plusieurs éléments :
+
+```text
+                    ┌──────────────────────┐
+                    │     Poste sol        │
+                    │                      │
+                    │ Configuration        │
+                    │ Commandes            │
+                    │ Télémétrie           │
+                    │ Enregistrement        │
+                    └──────────┬───────────┘
+                               │
+                             LoRa
+                               │
+                    ┌──────────▼───────────┐
+                    │ Centrale de navigation│
+                    │                       │
+                    │ ESP32                 │
+                    │                       │
+                    │ ┌───────────────────┐ │
+                    │ │ Estimation d'état │ │
+                    │ └───────────────────┘ │
+                    │          │            │
+                    │ ┌────────▼───────────┐│
+                    │ │ Contrôle de vol    ││
+                    │ └────────┬───────────┘│
+                    │          │            │
+                    │      Actionneurs      │
+                    │          │            │
+                    │      Capteurs         │
+                    └───────────────────────┘
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/vychop/Navychop.git
-git branch -M main
-git push -uf origin main
+
+La centrale de navigation est basée sur un **ESP32** et communique avec différents capteurs et périphériques.
+
+L'architecture est conçue pour pouvoir faire évoluer séparément :
+
+* l'acquisition des capteurs ;
+* l'estimation d'attitude et d'état ;
+* la navigation ;
+* les lois de commande ;
+* la communication ;
+* l'enregistrement des données ;
+* le poste sol.
+
+---
+
+# Matériel
+
+Le système est actuellement validé sur un aéronef radiocommandé expérimental.
+
+L'avion est volontairement réalisé avec des matériaux très simples, principalement des **plaques de polystyrène fines (~2 mm)**.
+
+Ordres de grandeur :
+
+| Paramètre                            |                               Valeur |
+| ------------------------------------ | -----------------------------------: |
+| Envergure                            |                               ~1,4 m |
+| Longueur                             |                                 ~1 m |
+| Masse à vide / configuration de base |                                ~1 kg |
+| Structure                            |                      Polystyrène fin |
+| Motorisation                         |                           Électrique |
+| Pilotage                             | Elevons / commandes conventionnelles |
+| Centrale de navigation               |                                ESP32 |
+
+Ces caractéristiques ne constituent pas une spécification figée : l'aéronef et son électronique sont susceptibles d'évoluer au cours des expérimentations.
+
+---
+
+# Centrale de navigation
+
+La centrale de navigation constitue une partie importante du projet.
+
+Elle regroupe notamment :
+
+* microcontrôleur **ESP32** ;
+* IMU ;
+* baromètre ;
+* magnétomètre ;
+* GPS ;
+* liaison radio longue portée 433MHz ;
+* interface avec un système de vision ;
+* sorties de commande des servomoteurs ;
+* enregistrement des données de vol.
+
+Le brochage, les paramètres et les interfaces peuvent évoluer avec les versions matérielles.
+
+Les informations relatives au câblage et aux versions de la carte doivent donc être considérées comme **versionnées avec le matériel correspondant**.
+
+---
+
+# Bibliothèques embarquées
+
+Les bibliothèques présentes dans ce dépôt sont principalement des composants **spécifiques à la centrale de navigation développée dans le cadre de `navychop`**.
+
+Elles ne doivent donc pas nécessairement être considérées comme des bibliothèques génériques ou autonomes.
+
+Elles peuvent dépendre :
+
+* du brochage de la carte ;
+* des périphériques effectivement présents ;
+* de la structure des données du projet ;
+* du protocole de communication interne ;
+* du format des données de télémétrie ;
+* des contraintes de calcul et de mémoire de l'ESP32.
+
+Lorsqu'une bibliothèque tierce est utilisée, elle doit autant que possible être clairement identifiée comme telle, avec sa version et sa licence.
+
+Les bibliothèques développées spécifiquement pour `navychop` sont distinguées des dépendances externes afin de faciliter leur réutilisation.
+
+---
+
+# Développement assisté par IA
+
+Une caractéristique importante du projet est l'utilisation intensive d'**IA génératives comme assistants de développement**.
+
+Elles peuvent notamment être utilisées pour :
+
+* proposer des architectures logicielles ;
+* générer ou modifier du code ;
+* expliquer des algorithmes ;
+* rechercher des erreurs ;
+* analyser des résultats expérimentaux ;
+* produire de la documentation ;
+* challenger certaines hypothèses techniques ;
+* générer des outils de test.
+
+Cependant, le code généré par une IA n'est pas considéré comme automatiquement correct.
+
+Pour les fonctions ayant un impact sur le comportement de l'aéronef, les propositions sont confrontées autant que possible à :
+
+* la documentation des composants ;
+* les équations et modèles physiques ;
+* des tests unitaires ;
+* des simulations ;
+* des essais sur banc ;
+* des mesures instrumentées ;
+* des essais en vol progressifs.
+
+Le projet constitue ainsi également une expérimentation sur le **développement logiciel humain + IA dans un système cyber-physique réel**.
+
+---
+
+# Expérimentation et validation
+
+Le développement suit autant que possible une progression :
+
+```text
+Théorie
+   ↓
+Simulation / calcul
+   ↓
+Test logiciel
+   ↓
+Test sur banc
+   ↓
+Test moteur arrêté
+   ↓
+Essai en conditions contrôlées
+   ↓
+Essai en vol
+   ↓
+Analyse des données
+   ↓
+Modification
 ```
 
-## Integrate with your tools
+Les résultats d'un essai réel peuvent donc conduire à remettre en question une hypothèse précédemment considérée comme correcte.
 
-* [Set up project integrations](https://gitlab.com/vychop/Navychop/-/settings/integrations)
+Une fonctionnalité présente dans le code ne doit pas être considérée comme **validée en vol** tant qu'un essai approprié ne l'a pas démontré.
 
-## Collaborate with your team
+---
 
-* [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+# Données de vol
 
-## Test and Deploy
+Les données enregistrées pendant les expérimentations sont utilisées pour :
 
-Use the built-in continuous integration in GitLab.
+* analyser le comportement de l'aéronef ;
+* caractériser les capteurs ;
+* analyser les boucles de contrôle ;
+* identifier les instabilités ;
+* comparer différentes configurations ;
+* reproduire certains problèmes ;
+* mesurer les performances du système.
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+Lorsque cela est pertinent, les expérimentations peuvent être accompagnées de leur configuration matérielle et logicielle afin de permettre leur reproduction.
 
-***
+---
 
-# Editing this README
+# État du projet
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+Le projet est **expérimental et en développement actif**.
 
-## Suggestions for a good README
+Les interfaces, protocoles, paramètres, algorithmes et structures de données peuvent changer sans garantie de compatibilité avec les versions précédentes.
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+Les fonctionnalités peuvent avoir différents niveaux de maturité :
 
-## Name
-Choose a self-explaining name for your project.
+* **Prototype** — implémentation initiale, non validée ;
+* **Bench tested** — testé sur banc ;
+* **Flight tested** — testé en vol ;
+* **Experimental** — fonction opérationnelle mais encore en cours d'étude.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+Une fonctionnalité fonctionnant sur l'aéronef ne doit pas pour autant être considérée comme adaptée à une utilisation critique ou à un autre aéronef sans nouvelle validation.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+---
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+# Sécurité
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+`navychop` est un projet expérimental concernant un aéronef radiocommandé.
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+**Le logiciel et le matériel fournis dans ce dépôt ne sont pas des systèmes avioniques certifiés.**
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+Toute utilisation sur un aéronef doit être précédée de validations adaptées au matériel, à l'environnement et au niveau de risque considéré.
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+Les essais doivent notamment prendre en compte :
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+* la perte de liaison radio ;
+* les erreurs de capteurs ;
+* les erreurs d'estimation ;
+* les saturations des commandes ;
+* les défauts logiciels ;
+* les pertes d'alimentation ;
+* les comportements inattendus du pilote automatique ;
+* la possibilité de reprendre le contrôle manuellement.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+Le système doit toujours disposer d'un moyen approprié de récupération ou d'interruption du contrôle automatique lors des essais.
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+**Ne pas utiliser ce projet comme base directe pour le contrôle d'un aéronef habité ou d'un système dont la défaillance pourrait mettre des personnes en danger.**
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+**Tout vol doit être effectué dans des conditions autorisée par la loi en vigueur.**
 
-## License
-For open source projects, say how it is licensed.
+---
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+# Reproductibilité
+
+L'objectif est de documenter suffisamment le projet pour qu'une autre personne puisse reproduire une partie significative des expérimentations.
+
+Lorsque cela est pertinent, les commits, versions matérielles, paramètres et résultats d'essais doivent être associés aux expérimentations correspondantes.
+
+Les changements susceptibles de modifier le comportement en vol doivent idéalement être identifiables dans l'historique Git.
+
+---
+
+# Git et GitLab
+
+Le dépôt utilise Git afin de conserver l'historique du développement et GitLab pour l'hébergement du projet.
+
+Les contributions doivent autant que possible :
+
+* utiliser des commits atomiques ;
+* employer des messages de commit explicites ;
+* éviter de mélanger refactoring, nouvelle fonctionnalité et correction expérimentale dans un même commit ;
+* documenter les changements ayant un impact sur le comportement de l'aéronef ;
+* conserver les configurations nécessaires à la reproduction d'une expérience ;
+* utiliser les **Issues** pour les bugs, idées et problèmes identifiés ;
+* utiliser les **Merge Requests** lorsque plusieurs branches ou contributeurs sont impliqués ;
+* utiliser les **Tags/Releases** pour identifier les versions importantes du logiciel ou du matériel.
+
+Pour les modifications importantes, une Issue peut servir à documenter :
+
+```text
+Problème
+↓
+Hypothèse
+↓
+Modification
+↓
+Test
+↓
+Résultat
+↓
+Conclusion
+```
+
+Cette approche permet de conserver une trace expérimentale plutôt qu'un simple historique de code.
+
+---
+
+# Dépendances
+
+Les dépendances externes doivent être identifiées explicitement lorsqu'elles sont nécessaires à la compilation ou au fonctionnement du projet.
+
+Pour chaque dépendance importante, il est recommandé de conserver :
+
+* nom ;
+* version ;
+* source officielle ;
+* licence ;
+* raison de son utilisation.
+
+Les bibliothèques développées spécifiquement pour `navychop` sont séparées conceptuellement des dépendances tierces.
+
+---
+
+# Licence
+
+Le projet est destiné à être partagé et réutilisé.
+
+Une licence libre est recommandée afin de définir clairement les droits accordés aux utilisateurs et contributeurs.
+
+Pour le **code source**, une licence permissive telle que **MIT** ou **Apache-2.0** peut être adaptée à l'objectif du projet.
+
+Une séparation peut également être faite entre :
+
+* **code source** ;
+* **documentation** ;
+* **schémas électroniques / PCB** ;
+* **modèles mécaniques** ;
+* **données expérimentales**.
+
+Chaque catégorie peut recevoir une licence adaptée.
+
+La licence finalement retenue sera indiquée dans `LICENSE` et dans les éventuels sous-répertoires concernés.
+
+---
+
+# Contribution
+
+Les contributions, corrections et discussions techniques sont les bienvenues.
+
+Avant de proposer une modification importante, il est recommandé d'ouvrir une Issue afin de discuter de l'approche envisagée.
+
+Les contributions doivent privilégier :
+
+* la reproductibilité ;
+* la simplicité ;
+* la documentation ;
+* les tests ;
+* l'explicitation des hypothèses ;
+* la séparation entre fonctionnalités expérimentales et fonctionnalités validées.
+
+---
+
+# Pourquoi « navychop » ?
+
+`navychop` est le nom du projet et de son environnement logiciel. Ce nom provien de l'association du pseudo Vychop et 'nav' pour navigation. 
+
+Le nom n'a pas vocation à constituer une marque commerciale ou une désignation aéronautique officielle.
+
+---
+
+## Avertissement
+
+Ce dépôt documente une expérimentation personnelle.
+
+Les résultats présentés sont dépendants du matériel, du logiciel, de la configuration de l'aéronef et des conditions expérimentales.
+
+**Un résultat obtenu dans le cadre de `navychop` ne constitue pas une garantie de comportement dans une autre configuration.**
+
+---
+
+## Auteur
+
+Projet développé individuellement par Vychop (Yves MICHELS) avec l'assistance d'outils d'IA générative.
+
+Le projet cherche notamment à documenter ce qu'une personne seule peut réaliser en combinant :
+
+* connaissances scientifiques et techniques ;
+* prototypage électronique ;
+* développement logiciel ;
+* expérimentation physique ;
+* outils open source ;
+* IA génératives.
+
+L'objectif n'est pas de démontrer que l'IA remplace l'ingénierie, mais de **mesurer expérimentalement ce qu'elle permet de réaliser lorsqu'elle est utilisée comme outil par un ingénieur.**

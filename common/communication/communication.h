@@ -18,9 +18,9 @@ struct logState
     int16_t a_z;         // 4 bits fractionnaire
 
     // magneto
-    int16_t mag_x;         // 14 bits fractionnaire
-    int16_t mag_y;         // 14 bits fractionnaire
-    int16_t mag_z;         // 14 bits fractionnaire
+    int16_t mag_x;         // 4 bits fractionnaire
+    int16_t mag_y;         // 4 bits fractionnaire
+    int16_t mag_z;         // 4 bits fractionnaire
 
     // Quaternion game rotation
     int16_t gqw;        // 14 bits fractionnaire
@@ -36,7 +36,7 @@ struct logState
     int16_t eta_pitch;  // 6 bits fractionnaire
     int16_t eta_roll;   // 6 bits fractionnaire
 
-    // Projections précédentes
+    // Projections courantes
     int16_t proj_yaw;    // 14 bits fractionnaire
     int16_t proj_pitch;  // 14 bits fractionnaire
     int16_t proj_roll;   // 14 bits fractionnaire
@@ -83,7 +83,7 @@ struct CmdState {
     uint16_t n_lost;          // nombre de passages en failsafe
 };
 
-void quantif_angle(int16_t* delta_angle, float angle, int16_t* last_angle, uint8_t nbits, uint8_t binpt);
+void quantif_angle(int8_t* delta_angle, float angle, int16_t* last_angle, uint8_t nbits, uint8_t binpt);
 void send_quaternions_and_logs(float *q_grv, float *q_rv, int16_t *logs);
 
 bool lora_check_and_echo();

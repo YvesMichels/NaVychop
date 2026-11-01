@@ -33,9 +33,6 @@ parameters system_param;
 
 uint8_t lora_cmd[4] = {1, 0, 0, 127};
 CmdState cmd_state;
-static uint32_t last_lora_ms = 0;
-static uint8_t old_yaw_cmd = 0;
-bool lora_link_ok = false;
 
 SPIClass spiLoRa(VSPI);
 
@@ -75,6 +72,7 @@ float magneto[3];   // vecteur de champs magnétiques
 // variables altitude
 AttitudeParameters att_param;
 AttitudeState att_states;
+uint8_t alt_cal_launched = 0;   // calibration auto déjà déclenchée (une seule fois)
 
 // variables asservissement
 ControlState control_states; 
@@ -281,14 +279,15 @@ void loop()
 
     float pressure, temp;
     float qw, qx, qy, qz;
+    
     // --- BMP390 ---
     if (bmp.performReading()) {
-        pressure = bmp.pressure;
-        temp = bmp.temperature;
-        estimateAltitude(&att_states, &att_param, bmp.pressure, bmp.temperature, 0);
-        if(t_target > 3000 && t_target < 4000){
-            estimateAltitude(&att_states, &att_param, bmp.pressure, bmp.temperature, 1); // lance une calibration au bout de 3 secondes
+        uint8_t cal_en = 0;
+        if (!alt_cal_launched && t_target >= 3000) {   // 3 s après le début de la boucle
+            cal_en = 1;
+            alt_cal_launched = 1;                       // déclenchement unique
         }
+        estimateAltitude(&att_states, &att_param, bmp.pressure, bmp.temperature, cal_en);
     }
 
     // --- BNO085 ---

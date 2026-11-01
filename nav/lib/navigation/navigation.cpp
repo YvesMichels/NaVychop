@@ -221,70 +221,66 @@ void attitude_init(AttitudeState *st, AttitudeParameters *params)
     st->cal_samples  = 0;
     st->cal_active   = 0;
 
-    params->tps_cal = 2000;
+    params->tps_cal = 1000;
 
     // ----------------------------
     // PARAMETER INITIALIZATION
     // ----------------------------
-    params->alpha_alt = 0.25f;  // filtre altitude (bon compromis avion RC)
+    params->alpha_alt = 0.1f;  // filtre altitude (bon compromis avion RC)
     params->alpha_p0  = 0.02f;  // filtre pression lente (stabilité météo)
 
     params->g0 = 9.81f;         // réservé extension (fusion IMU future)
 }
 
-void estimateAltitude(AttitudeState *st, AttitudeParameters *params, float pressure_pa, float temperature_c, uint8_t cal_en) {
-    // ----------------------------
-    // 1. INIT CALIBRATION
-    // ----------------------------
-    if (cal_en && !st->cal_active) {
-        st->cal_active = 1;
-        st->cal_counter = 0;
-
-        // durée calibration 
-        st->cal_samples = (uint16_t)(params->tps_cal / d_t);
-
-        st->p0 = pressure_pa;
-        st->alt_bias = 0.0f;
-        st->altitude = 0.0f; // altitude relative remise à zéro
+void estimateAltitude(AttitudeState *st, AttitudeParameters *params, float pressure_pa, float temperature_c, uint8_t cal_en)
+{
+    // Mesure invalide : on ne touche à rien (la calibration n'avance pas)
+    if (!(pressure_pa > 0.0f)) {
+        return;
     }
 
     // ----------------------------
-    // 2. CALIBRATION MODE
+    // 1. DÉMARRAGE D'UNE CALIBRATION
+    //    (uniquement si aucune n'est en cours : cal_en est sinon ignoré)
+    // ----------------------------
+    if (cal_en && !st->cal_active) {
+        st->cal_active  = 1;
+        st->cal_counter = 0;
+        st->cal_samples = params->tps_cal / d_t;
+        if (st->cal_samples < 1) st->cal_samples = 1;
+
+        st->p0           = 0.0f;   // sera construit par moyenne glissante exacte
+        st->alt_bias     = 0.0f;
+        st->altitude     = 0.0f;
+        st->altitude_raw = 0.0f;
+    }
+
+    // ----------------------------
+    // 2. CALIBRATION EN COURS : altitude forcée à 0
     // ----------------------------
     if (st->cal_active) {
-
-        // filtre pression de référence (moyenne exponentielle)
-        st->p0 = params->alpha_p0 * pressure_pa
-               + (1.0f - params->alpha_p0) * st->p0;
-
         st->cal_counter++;
 
-        // estimation altitude brute pendant calibration
-        float ratio = pressure_pa / st->p0;
-        st->altitude_raw = 44330.0f * (1.0f - std::pow(ratio, 0.1903f));
+        // moyenne exacte des cal_counter premiers échantillons
+        st->p0 += (pressure_pa - st->p0) / (float)st->cal_counter;
 
-        // accumulation bias
-        st->alt_bias = params->alpha_alt * st->altitude_raw
-                      + (1.0f - params->alpha_alt) * st->alt_bias;
+        st->altitude     = 0.0f;
+        st->altitude_raw = 0.0f;
 
-        // fin calibration
         if (st->cal_counter >= st->cal_samples) {
-            st->cal_active = 0;
+            st->cal_active = 0;    // p0 est maintenant la pression de référence
         }
-
-        st->altitude = 0.0f; // altitude relative remise à zéro
         return;
     }
 
     // ----------------------------
     // 3. MODE NORMAL
     // ----------------------------
-    if (pressure_pa <= 0.0f || st->p0 <= 0.0f) {
-        return;
+    if (st->p0 <= 0.0f) {
+        return;                    // jamais calibré : altitude reste à 0
     }
 
     float ratio = pressure_pa / st->p0;
-
     if (ratio <= 0.0f) {
         return;
     }

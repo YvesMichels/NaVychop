@@ -1,3 +1,4 @@
+#include <cmath>
 #include "navigation.h"
 #include "config.h"
 #include "default_parameters.h"
@@ -16,9 +17,9 @@ void printEulerFromQuat(float q0, float q1, float q2, float q3) {
 
 void computeEulerAngles(float q0, float q1, float q2, float q3, float* roll, float* pitch, float* yaw) {
   // q0 = real, q1 = i, q2 = j, q3 = k
-  *roll  = atan2(2.0 * (q0*q1 + q2*q3), 1.0 - 2.0 * (q1*q1 + q2*q2));
-  *pitch = asin(2.0 * (q0*q2 - q3*q1));
-  *yaw   = atan2(2.0 * (q0*q3 + q1*q2), 1.0 - 2.0 * (q2*q2 + q3*q3));
+  *roll  = atan2f(2.0f*(q0*q1 + q2*q3), 1.0f - 2.0f*(q1*q1 + q2*q2));
+  *pitch = asinf(constrain(2.0f*(q0*q2 - q3*q1), -1.0f, 1.0f));
+  *yaw   = atan2f(2.0f*(q0*q3 + q1*q2), 1.0f - 2.0f*(q2*q2 + q3*q3));
 }
 
 void computeRotationMatrix(float w, float x, float y, float z, float R[3][3]) {
@@ -92,7 +93,7 @@ void qToEulerXYZ(const Quaternion &q, float &rx, float &ry, float &rz) {
   float r21 = 2.0f*(q.y*q.z + q.w*q.x);
   float r22 = ww - xx - yy + zz;
 
-  ry = asinf(-r20);
+  ry = asinf(constrain(-r20, -1.0f, 1.0f));
   if (fabsf(r20) < 0.999999f) {
     rx = atan2f(r21, r22);
     rz = atan2f(r10, r00);
@@ -203,9 +204,6 @@ float computeYawCommandSignalImproved(float R[3][3], float yaw_cmd) {
 
     return cross;
 }
-
-#include <cmath>
-
 
 void attitude_init(AttitudeState *st, AttitudeParameters *params)
 {

@@ -84,8 +84,6 @@ struct CmdState {
 };
 
 void quantif_angle(int8_t* delta_angle, float angle, int16_t* last_angle, uint8_t nbits, uint8_t binpt);
-void send_quaternions_and_logs(float *q_grv, float *q_rv, int16_t *logs);
-
 bool lora_check_and_echo();
 
 uint8_t crc8(const uint8_t* data, size_t len);
@@ -113,9 +111,10 @@ uint8_t addLog(
     uint8_t cmd_yaw, uint8_t cmd_pitch, uint8_t cmd_roll, 
     const ControlState& ctrl,
     int8_t esc);
-void saveLogsToFlash(logState *buffer, uint16_t packetIndex);
+void saveLogsToFlash(logState *buffer, uint16_t packetIndex, uint16_t count = LOG_SIZE);
 void sendLogsCSVFromFlash();
 void sendLogsCSV(logState &s);
 void checkUartAndTriggerDump(uint8_t sync_state, logState *buffer);
+void sendRotation(float R[3][3]);
 
 #endif

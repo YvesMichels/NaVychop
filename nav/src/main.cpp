@@ -43,7 +43,6 @@ static int16_t logs[32]; // vecteur d'intrumentation du code pour les vérificat
 // variables LoRa
 Adafruit_BMP3XX bmp;
 Adafruit_BNO08x bno08x;
-static uint32_t cpt_rv = 0;
 static uint32_t cpt_grv = 0;
 static uint32_t cpt_acc = 0;
 static uint32_t cpt_mag = 0;
@@ -55,16 +54,13 @@ uint8_t roll_6 = 31;    // commande LoRa roll 6 bits (roulis neutre à 31)
 // variables IMU
 sh2_SensorValue_t sensorValue;
 // commenté car directement calculé dans les appels : long reportIntervalUs = 1000*d_t;  // période de raffraichissement de l'UMI
-Quaternion q_M_GRV;
-Quaternion q_M_RV;
-float R_M_RV[3][3]; // matrice de rotation de l'umu (M) par rapport à la terre hybridée magnéto
+Quaternion q_M_GRV = {1.0f, 0.0f, 0.0f, 0.0f};
 float R_M_GRV[3][3];// matrice de rotation de l'umu (M) par rapport à la terre sans magnéto
 float R_A_M[3][3] = {
     {  0.0f,  1.0f,  0.0f },  // X_M
     { -1.0f,  0.0f,  0.0f },  // Y_M
     {  0.0f,  0.0f,  1.0f }   // Z_M
 };// matrice de rotation de l'avion (A) par rapport à l'IMU (M) (fixe, dépend du montage)
-float R_A_RV[3][3]; // matrice de rotation de l'avion (A) par rapport à la terre hybridée magnéto
 float R_A_GRV[3][3];// matrice de rotation de l'avion (A) par rapport à la terre sans magnéto
 float accel[3];     // vecteur d'accéleration
 float magneto[3];   // vecteur de champs magnétiques
@@ -180,10 +176,9 @@ void setup()
         while (1);
     }
 
-    // bno08x.enableReport(SH2_ROTATION_VECTOR, 24500*d_t); // remplacée par le magnétomètre seul
-    bno08x.enableReport(SH2_MAGNETIC_FIELD_CALIBRATED, 24500*d_t);
-    bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, 1000*d_t);
-    bno08x.enableReport(SH2_LINEAR_ACCELERATION, 2865*d_t);
+    bno08x.enableReport(SH2_MAGNETIC_FIELD_CALIBRATED, 24500*d_t); // volontairement désyncronisé pour réduire les risques de perte sur le NBO085 (phénomène observé)
+    bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, 1000*d_t); // synchronisé car prioritaire pour l'asservissement (ancienneté maximum de 1*dt)
+    bno08x.enableReport(SH2_LINEAR_ACCELERATION, 2865*d_t); // volontairement désyncronisé pour réduire les risques de perte sur le NBO085 (phénomène observé)
 
     Serial.println("INIT OK");
 
@@ -270,9 +265,6 @@ void loop()
     float proj_yaw;         // produit scalaire : projection yaw sur commande yaw
     float proj_pitch;       // produit scalaire : projection pitch sur commande pitch
     float proj_roll;        // produit scalaire : projection roll sur commande roll
-    float yaw_ref = 0.0;    // yaw de référence (calibration au démmarage ou sur demande)
-    float pitch_ref = 0.0;  // yaw de référence (calibration au démmarage ou sur demande)
-    float roll_ref = 0.0;   // yaw de référence (calibration au démmarage ou sur demande)
     float cmd_yaw;          // commande angulaire yaw (lacet)
     float cmd_pitch;        // commande angulaire pitch (tangage)
     float cmd_roll;         // commande angulaire roll (roulis)
@@ -300,14 +292,6 @@ void loop()
             cpt_grv += 1;
         }
 
-        /*if (sensorValue.sensorId == SH2_ROTATION_VECTOR) {
-            q_M_RV = {sensorValue.un.rotationVector.real,
-                sensorValue.un.rotationVector.i,
-                sensorValue.un.rotationVector.j,
-                sensorValue.un.rotationVector.k};
-            cpt_rv += 1;
-        }*/
-
         if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
             accel[0] = sensorValue.un.linearAcceleration.x;
             accel[1] = sensorValue.un.linearAcceleration.y;
@@ -323,13 +307,9 @@ void loop()
         }
     }
 
-    if(t_target > 3000 && t_target < 3100) {
-        computeEulerAngles(q_M_RV.w, q_M_RV.x, q_M_RV.y, q_M_RV.z, &roll_ref, &pitch_ref, &yaw_ref);
-    }
-    computeRotationMatrix(q_M_RV.w, q_M_RV.x, q_M_RV.y, q_M_RV.z, R_M_RV);
-    rotMult(R_A_RV, R_A_M, R_M_RV);
     computeRotationMatrix(q_M_GRV.w, q_M_GRV.x, q_M_GRV.y, q_M_GRV.z, R_M_GRV);
     rotMult(R_A_GRV, R_A_M, R_M_GRV);
+    sendRotation(R_A_GRV);
 
     // --- Réception LoRa ---
 
@@ -385,9 +365,14 @@ void loop()
             logIndex = 0;
         }
     }
-    if(save_en == LOG_STOPPING && logIndex == 0) {
-        save_en = LOG_IDLE;    // met fin à l'enrregistrement si demandé et paquet complet
+    if(save_en == LOG_STOPPING) {
+    if(logIndex > 0) {                                    // paquet partiel à écrire
+        saveLogsToFlash(logBuffer, flash_logIndex, logIndex);
+        flash_logIndex += 1;
+        logIndex = 0;
     }
+    save_en = LOG_IDLE;                                   // fin de l'enregistrement
+}
     checkUartAndTriggerDump(sync_state, logBuffer);
 
     // gestion du temps

@@ -30,61 +30,6 @@ static inline int16_t float_to_q16(float x) {
     return (int16_t)(x * 32767.0f);
 }
 
-
-void send_quaternions_and_logs(float *q_grv, float *q_rv, int16_t *logs)
-{
-    uint8_t buffer[54];
-    uint8_t checksum = 0;
-    uint8_t *ptr = buffer;
-
-    // --- Synchronisation ---
-    *ptr++ = SYNC_1; checksum ^= SYNC_1;
-    *ptr++ = SYNC_2; checksum ^= SYNC_2;
-    *ptr++ = SYNC_3; checksum ^= SYNC_3;
-    *ptr++ = SYNC_4; checksum ^= SYNC_4;
-
-    // --- Format ---
-    *ptr++ = QUATERNION_FORMAT; checksum ^= QUATERNION_FORMAT;
-
-    // --- Quaternion GAME_ROTATION_VECTOR ---
-    for (int i = 0; i < 4; i++) {
-        int16_t v = float_to_q16(q_grv[i]);
-        uint8_t b0 = v & 0xFF;
-        uint8_t b1 = (v >> 8) & 0xFF;
-        *ptr++ = b0; checksum ^= b0;
-        *ptr++ = b1; checksum ^= b1;
-    }
-
-    // --- Quaternion ROTATION_VECTOR ---
-    for (int i = 0; i < 4; i++) {
-        int16_t v = float_to_q16(q_rv[i]);
-        uint8_t b0 = v & 0xFF;
-        uint8_t b1 = (v >> 8) & 0xFF;
-        *ptr++ = b0; checksum ^= b0;
-        *ptr++ = b1; checksum ^= b1;
-    }
-
-    // --- Logs (16 x 16 bits) ---
-    for (int i = 0; i < 16; i++) {
-        uint16_t v = (uint16_t)logs[i];
-        for (int j = 0; j < 2; j++) {
-            uint8_t b = (v >> (8*j)) & 0xFF;
-            *ptr++ = b;
-            checksum ^= b;
-        }
-    }
-
-    // --- Checksum ---
-    *ptr++ = checksum;
-
-    // --- Envoi ---
-    Serial.write(buffer, sizeof(buffer));
-
-    //LoRa.beginPacket();
-    //LoRa.write(buffer, sizeof(buffer));
-    //LoRa.endPacket();
-}
-
 bool lora_check_and_echo()
 {
     int packetSize = LoRa.parsePacket();
@@ -177,21 +122,6 @@ bool lora_check_cmd(uint8_t *lora_cmd)
     while (LoRa.available()) LoRa.read();
     return msg_ok;
 }
-
-/*void lora_failsafe(uint8_t lora_cmd[4], uint32_t last_lora_ms, uint32_t now_ms, uint8_t old_value, uint16_t timeout_ms)
-{
-    if ((now_ms - last_lora_ms) > timeout_ms)
-    {
-        // FAILSAFE MODE
-
-        lora_cmd[0] = 0;       // flag désactivé
-        lora_cmd[1] = 1;       // motor=0, yaw=31
-        lora_cmd[2] = 247;     // yaw=31, pitch=31
-        lora_cmd[3] = 223;     // pitch=31, roll=31
-
-        return;
-    }
-}*/
 
 static void cmd_apply_safe(CmdState &c)
 {
@@ -304,7 +234,7 @@ uint8_t addLog(
     s.a_y = (int16_t)roundf(ay * Q4_SCALE);
     s.a_z = (int16_t)roundf(az * Q4_SCALE);
 
-    // Quaternion rotation (Q14)
+    // Champ magnétique (Q4)
     s.mag_x = (int16_t)roundf(mag_x * Q4_SCALE);
     s.mag_y = (int16_t)roundf(mag_y * Q4_SCALE);
     s.mag_z = (int16_t)roundf(mag_z * Q4_SCALE);
@@ -353,7 +283,7 @@ uint8_t addLog(
     
 }
 
-void saveLogsToFlash(logState *buffer, uint16_t packetIndex)
+void saveLogsToFlash(logState *buffer, uint16_t packetIndex, uint16_t count)
 {
     // Premier paquet : on supprime l'ancien fichier
     if (packetIndex == 0)
@@ -372,7 +302,7 @@ void saveLogsToFlash(logState *buffer, uint16_t packetIndex)
         return;
     }
 
-    const size_t packetSize = LOG_SIZE * sizeof(logState);
+    const size_t packetSize = count * sizeof(logState);
 
     size_t written = file.write(
         (uint8_t*)buffer,
@@ -529,4 +459,20 @@ void checkUartAndTriggerDump(uint8_t sync_state, logState *buffer)
                 break;
         }
     }
+}
+
+void sendRotation(float R[3][3]){
+    #if DEBUG_STREAM_R
+        {
+            char line[128];
+            int n = snprintf(line, sizeof(line),
+                "R,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
+                R[0][0], R[0][1], R[0][2],
+                R[1][0], R[1][1], R[1][2],
+                R[2][0], R[2][1], R[2][2]);
+            Serial.write((uint8_t*)line, n);
+        }
+    #else
+        (void)R;
+    #endif
 }

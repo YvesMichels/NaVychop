@@ -16,7 +16,6 @@
 #define I2C_ID_BMP 0x76         // adresse I2C du BMP (capteur barométrique)
 #define I2C_ID_BNO 0x4B         // adresse I2C du BNO (centrale inertielle)
 
-
 // gestion du temps 
 #define d_t 40                  // interval de temps cible d'une boucle (ms)
 
@@ -34,7 +33,6 @@
 #define SYNC_3 0xCC             // octet de synchronisation 3
 #define SYNC_4 0x33             // octet de synchronisation 4
 #define TRANSFORM_FORMAT 0x42   // identifiant module vision "informations de transformation 2 trames images successives"
-#define QUATERNION_FORMAT 0x51  // identifiant des logs de quaternions
 #define VISION_FRAME_SIZE 76    // nombre d'octets envoyé par le module de vision
 #define LORA_FRAME_SIZE 7       // 2 octest sync, 1 octet type, 3 octets data, 1 octet CRC
 
@@ -63,5 +61,7 @@
 
 #define LOG_SIZE 50             // 50 logs bufferisés avant écriture en flash
 
+// debug et vérifications unitaires
+#define DEBUG_STREAM_R 0    // 1 : envoie R_A_GRV sur le port série (banc), 0 : désactivé (vol)
 
 #endif

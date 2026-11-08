@@ -12,6 +12,7 @@
 #include "communication.h"
 #include "control.h"
 #include "datalink.h"
+#include "gps.h"
 
 typedef struct {
     int32_t dummy;   // index 0 non utilisé ici
@@ -55,13 +56,13 @@ uint8_t roll_6 = 31;    // commande LoRa roll 6 bits (roulis neutre à 31)
 sh2_SensorValue_t sensorValue;
 // commenté car directement calculé dans les appels : long reportIntervalUs = 1000*d_t;  // période de raffraichissement de l'UMI
 Quaternion q_M_GRV = {1.0f, 0.0f, 0.0f, 0.0f};
-float R_M_GRV[3][3];// matrice de rotation de l'umu (M) par rapport à la terre sans magnéto
-float R_A_M[3][3] = {
+float R_G_M[3][3];// matrice de rotation de l'umu (M) vers à la terre (G). Contient, dans ses colonnes, les trois axes de l'IMU exprimés dans le repère terrestre.
+float R_M_A[3][3] = {
     {  0.0f,  1.0f,  0.0f },  // X_M
     { -1.0f,  0.0f,  0.0f },  // Y_M
     {  0.0f,  0.0f,  1.0f }   // Z_M
-};// matrice de rotation de l'avion (A) par rapport à l'IMU (M) (fixe, dépend du montage)
-float R_A_GRV[3][3];// matrice de rotation de l'avion (A) par rapport à la terre sans magnéto
+};// matrice de rotation de l'avion (A) vers l'IMU (M) (fixe, dépend du montage)
+float R_G_A[3][3];// matrice de rotation de l'avion (A) par rapport à la terre. Contient, dans ses colonnes, les trois axes de l'avion exprimés dans le repère terrestre.
 float accel[3];     // vecteur d'accéleration
 float magneto[3];   // vecteur de champs magnétiques
 
@@ -69,6 +70,9 @@ float magneto[3];   // vecteur de champs magnétiques
 AttitudeParameters att_param;
 AttitudeState att_states;
 uint8_t alt_cal_launched = 0;   // calibration auto déjà déclenchée (une seule fois)
+
+// variables GNSS
+GpsState gps;
 
 // variables asservissement
 ControlState control_states; 
@@ -155,7 +159,10 @@ void setup()
     // UART vision
     Serial1.begin(115200, SERIAL_8N1, SERIAL_VISION, -1);
     // UART commandes moteurs
-    Serial2.begin(19200, SERIAL_8N1, -1, SERIAL_MOTORS);
+    //Serial2.begin(19200, SERIAL_8N1, SERIAL_GPS, SERIAL_MOTORS);
+    Serial2.setRxBufferSize(GPS_RX_BUFFER_SIZE);                       // 1024 octets au lieu de 256
+    Serial2.begin(GPS_BAUD, SERIAL_8N1, SERIAL_GPS, SERIAL_MOTORS);
+    gps_init(gps);
     delay(50);
 
     // I2C
@@ -307,9 +314,9 @@ void loop()
         }
     }
 
-    computeRotationMatrix(q_M_GRV.w, q_M_GRV.x, q_M_GRV.y, q_M_GRV.z, R_M_GRV);
-    rotMult(R_A_GRV, R_A_M, R_M_GRV);
-    sendRotation(R_A_GRV);
+    computeRotationMatrix(q_M_GRV.w, q_M_GRV.x, q_M_GRV.y, q_M_GRV.z, R_G_M);
+    rotMult(R_G_A, R_G_M, R_M_A);
+    sendRotation(R_G_A);
 
     // --- Réception LoRa ---
 
@@ -346,7 +353,7 @@ void loop()
     cmd_pitch = 0.5*(((float)pitch_6)-31)/32; // entre -0.5 et 0.5 rad (environ +- 30 degrés)
     cmd_roll = 0.25*(((float)roll_6)-31)/32; // entre -0.25 et 0.25 rad (environ +- 15 degrés)
 
-    control_update_inner(control_states, system_param.control_param, R_A_GRV, cmd_yaw, cmd_pitch, cmd_roll);
+    control_update_inner(control_states, system_param.control_param, R_G_A, cmd_yaw, cmd_pitch, cmd_roll);
     // gouvernes de pitch et roll controlées par asservissement 
     servo1 = max(system_param.control_param.ctrl_min_pitch, min(system_param.control_param.ctrl_max_pitch, (uint8_t)((-control_states.ctrl_pitch) + 32)));
     servo2 = max(system_param.control_param.ctrl_min_roll_l, min(system_param.control_param.ctrl_max_roll_l, (uint8_t)((-control_states.ctrl_roll) + 32)));
@@ -374,6 +381,16 @@ void loop()
     save_en = LOG_IDLE;                                   // fin de l'enregistrement
 }
     checkUartAndTriggerDump(sync_state, logBuffer);
+
+    // gestion GNSS
+    if (gps_poll(gps, Serial2, t_cur - t_0, GPS_READ_BUDGET_US)) {
+        const GpsFix &f = gps.fix;
+        Serial.printf("GPS,%lu,%lu,%lu,%ld,%ld,%ld,%u,%u,%u.%02u,%d\n",
+              (unsigned long)f.seq, (unsigned long)f.t_rx_ms, (unsigned long)f.utc_ms,
+              (long)f.lat_e7, (long)f.lon_e7, (long)f.alt_mm,
+              f.quality, f.nsat, f.hdop_x100 / 100, f.hdop_x100 % 100,
+              gps_fix_usable(f) ? 1 : 0);
+    }
 
     // gestion du temps
   t_target = t_target + d_t;

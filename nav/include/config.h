@@ -11,6 +11,7 @@
 
 #define SERIAL_VISION 25        // pin UART Rx vision
 #define SERIAL_MOTORS 17        // pin UART Tx moteurs
+#define SERIAL_GPS 16           // pin UART Rx GPS
 #define I2C_SDA 21              // pin données I2C partagée
 #define I2C_SCL 22              // pin horloge I2C partagée
 #define I2C_ID_BMP 0x76         // adresse I2C du BMP (capteur barométrique)

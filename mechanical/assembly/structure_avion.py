@@ -16,6 +16,7 @@ Architecture :
     1. Géométrie des pièces : PIECES
     2. Configuration : ASSEMBLAGE
     3. Construction automatique : boucle d'assemblage
+
 """
 
 import FreeCAD as App
@@ -42,6 +43,7 @@ OUTPUT_FILE = (
 # ============================================================
 
 PLATE_THICKNESS = 3.0
+POSITION_AILE_X = 70.0
 
 
 # ============================================================
@@ -230,6 +232,24 @@ PIECES = {
         (80, 50),
         (75, 45),
         (75, 0),
+    ],
+
+    # --------------------------------------------------------
+    # AILES
+    # --------------------------------------------------------
+
+    "plat_aile_droite": [
+        (0, 0),
+        (0, -650),
+        (240, -650),
+        (240, 0),
+    ],
+
+    "plat_aile_gauche": [
+        (0, 0),
+        (0, 650),
+        (240, 650),
+        (240, 0),
     ],
 
 }
@@ -422,7 +442,7 @@ ASSEMBLAGE = {
     },
     
     "box_queue_vertical_gauche": {
-
+ 
         "translation": (60-650.0, 50, 60),
 
         "rotation": (0.0, 180-90.0, 90.0+8),
@@ -442,6 +462,30 @@ ASSEMBLAGE = {
         "thickness": PLATE_THICKNESS,
 
         "color": (0.90, 0.90, 0.90),
+
+    },
+
+    "plat_aile_droite": {
+
+        "translation": (-POSITION_AILE_X, 0, 63-15),
+
+        "rotation": (0, 180-2.5, 0.0),
+
+        "thickness": PLATE_THICKNESS,
+
+        "color": (0.50, 0.50, 0.90),
+
+    },
+
+    "plat_aile_gauche": {
+
+        "translation": (-POSITION_AILE_X, 63, 63-15),
+
+        "rotation": (0, 180-2.5, 0.0),
+
+        "thickness": PLATE_THICKNESS,
+
+        "color": (0.50, 0.50, 0.90),
 
     },
 

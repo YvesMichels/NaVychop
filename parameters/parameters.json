@@ -1,0 +1,33 @@
+{
+  "_comment": "id : entier uint16. tx_type = 0x10 + (id >> 8), dat0 = id & 0xFF, dat1/dat2 = valeur int16 LS/MS. binpt : valeur physique * 2^binpt = int16 envoyé.",
+  "categories": [
+    {
+      "id": "control_param",
+      "label": "PID — Paramètres de contrôle",
+      "description": "Gains et biais des correcteurs PID (yaw / pitch / roll)",
+      "cpp_struct": "system_param.control_param",
+      "parameters": [
+        { "id": 0,  "label": "Kp_yaw",         "cpp_field": "Kp_yaw",         "description": "Gain proportionnel yaw",               "type": "float", "binpt": 4,  "default": 0.0,   "unit": "cmd/proj" },
+        { "id": 1,  "label": "Ki_yaw",         "cpp_field": "Ki_yaw",         "description": "Gain intégral yaw",                    "type": "float", "binpt": 8,  "default": 0.0,   "unit": "cmd/(proj·ms)" },
+        { "id": 2,  "label": "Kd_yaw",         "cpp_field": "Kd_yaw",         "description": "Gain dérivé yaw",                      "type": "float", "binpt": 4,  "default": 0.0,   "unit": "cmd·ms/proj" },
+        { "id": 3,  "label": "Kp_pitch",       "cpp_field": "Kp_pitch",       "description": "Gain proportionnel pitch",             "type": "float", "binpt": 4,  "default": 30.0,  "unit": "cmd/proj" },
+        { "id": 4,  "label": "Ki_pitch",       "cpp_field": "Ki_pitch",       "description": "Gain intégral pitch",                  "type": "float", "binpt": 8,  "default": 0.02, "unit": "cmd/(proj·ms)" },
+        { "id": 5,  "label": "Kd_pitch",       "cpp_field": "Kd_pitch",       "description": "Gain dérivé pitch",                    "type": "float", "binpt": 4,  "default": 20.0,  "unit": "cmd·ms/proj" },
+        { "id": 6,  "label": "Kp_roll",        "cpp_field": "Kp_roll",        "description": "Gain proportionnel roll",              "type": "float", "binpt": 4,  "default": 50.0,  "unit": "cmd/proj" },
+        { "id": 7,  "label": "Ki_roll",        "cpp_field": "Ki_roll",        "description": "Gain intégral roll",                   "type": "float", "binpt": 8,  "default": 0.05, "unit": "cmd/(proj·ms)" },
+        { "id": 8,  "label": "Kd_roll",        "cpp_field": "Kd_roll",        "description": "Gain dérivé roll",                     "type": "float", "binpt": 4,  "default": 20.0,  "unit": "cmd·ms/proj" },
+        { "id": 9,  "label": "ctrl_bias_yaw",  "cpp_field": "ctrl_bias_yaw",  "description": "Biais de trim gouverne yaw",           "type": "float", "binpt": 6,  "default": 0.0,   "unit": "cmd" },
+        { "id": 10, "label": "ctrl_bias_pitch","cpp_field": "ctrl_bias_pitch","description": "Biais de trim gouverne pitch",         "type": "float", "binpt": 6,  "default": 0.0,   "unit": "cmd" },
+        { "id": 11, "label": "ctrl_bias_roll", "cpp_field": "ctrl_bias_roll", "description": "Biais de trim gouverne roll",          "type": "float", "binpt": 6,  "default": 0.0,   "unit": "cmd" }, 
+        { "id": 12, "label": "ctrl_min_yaw",   "cpp_field": "ctrl_min_yaw",   "description": "Limite basse du controle de yaw",          "type": "uint8_t", "binpt": 0, "default": 56,  "unit": "cmd" },
+        { "id": 13, "label": "ctrl_max_yaw",   "cpp_field": "ctrl_max_yaw",   "description": "Limite haute du controle de yaw",         "type": "uint8_t", "binpt": 0, "default": 110, "unit": "cmd" },
+        { "id": 14, "label": "ctrl_min_pitch", "cpp_field": "ctrl_min_pitch", "description": "Limite basse du controle de pitch",        "type": "uint8_t", "binpt": 0, "default": 0,   "unit": "cmd" },
+        { "id": 15, "label": "ctrl_max_pitch", "cpp_field": "ctrl_max_pitch", "description": "Limite haute du controle de pitch",       "type": "uint8_t", "binpt": 0, "default": 180, "unit": "cmd" },
+        { "id": 16, "label": "ctrl_min_roll_r","cpp_field": "ctrl_min_roll_r","description": "Limite basse du controle de roll aile droite", "type": "uint8_t", "binpt": 0, "default": 36,  "unit": "cmd" },
+        { "id": 17, "label": "ctrl_max_roll_r","cpp_field": "ctrl_max_roll_r","description": "Limite haute du controle de roll aile droite","type": "uint8_t", "binpt": 0, "default": 118, "unit": "cmd" },
+        { "id": 18, "label": "ctrl_min_roll_l","cpp_field": "ctrl_min_roll_l","description": "Limite basse du controle de roll aile gauche", "type": "uint8_t", "binpt": 0, "default": 50,  "unit": "cmd" },
+        { "id": 19, "label": "ctrl_max_roll_l","cpp_field": "ctrl_max_roll_l","description": "Limite haute du controle de roll aile gauche","type": "uint8_t", "binpt": 0, "default": 130, "unit": "cmd" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+# PlatformIO build artifacts
+.pio/
+
+# VSCode workspace settings (optionnel à versionner)
+.vscode/*
+
+# Fichiers temporaires OS
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+
+# Library auto-downloads (PlatformIO)
+.libdeps/
+
+# Arduino sketch artifacts
+*.elf
+*.bin
+*.hex

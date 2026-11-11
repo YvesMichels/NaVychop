@@ -357,23 +357,13 @@ Les bibliothèques développées spécifiquement pour `navychop` sont séparées
 
 # Licence
 
-Le projet est destiné à être partagé et réutilisé.
+| Contenu | Licence |
+|---|---|
+| Code (`nav/`, `vision/`, `peripherals/`, `common/`, `python/`, `matlab/`) | MIT (`LICENSE.md`) |
+| Matériel (`electronics/`, `mechanical/`) | CERN-OHL-P v2 (`LICENSE-HARDWARE.md`) |
+| Documentation (`documentation/`) | CC BY 4.0 (`LICENSE-DOCS.md`) |
 
-Une licence libre est recommandée afin de définir clairement les droits accordés aux utilisateurs et contributeurs.
-
-Pour le **code source**, une licence permissive telle que **MIT** ou **Apache-2.0** peut être adaptée à l'objectif du projet.
-
-Une séparation peut également être faite entre :
-
-* **code source** ;
-* **documentation** ;
-* **schémas électroniques / PCB** ;
-* **modèles mécaniques** ;
-* **données expérimentales**.
-
-Chaque catégorie peut recevoir une licence adaptée.
-
-La licence finalement retenue sera indiquée dans `LICENSE` et dans les éventuels sous-répertoires concernés.
+Voir aussi [DISCLAIMER.md](DISCLAIMER.md) : avertissement sur la sécurité et la réglementation.
 
 ---
 

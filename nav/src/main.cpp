@@ -159,7 +159,7 @@ void setup()
     // UART vision
     Serial1.begin(115200, SERIAL_8N1, SERIAL_VISION, -1);
     // UART commandes moteurs
-    //Serial2.begin(19200, SERIAL_8N1, SERIAL_GPS, SERIAL_MOTORS);
+    //Serial2.begin(9600, SERIAL_8N1, -1, SERIAL_MOTORS);
     Serial2.setRxBufferSize(GPS_RX_BUFFER_SIZE);                       // 1024 octets au lieu de 256
     Serial2.begin(GPS_BAUD, SERIAL_8N1, SERIAL_GPS, SERIAL_MOTORS);
     gps_init(gps);
@@ -385,11 +385,11 @@ void loop()
     // gestion GNSS
     if (gps_poll(gps, Serial2, t_cur - t_0, GPS_READ_BUDGET_US)) {
         const GpsFix &f = gps.fix;
-        Serial.printf("GPS,%lu,%lu,%lu,%ld,%ld,%ld,%u,%u,%u.%02u,%d\n",
-              (unsigned long)f.seq, (unsigned long)f.t_rx_ms, (unsigned long)f.utc_ms,
-              (long)f.lat_e7, (long)f.lon_e7, (long)f.alt_mm,
-              f.quality, f.nsat, f.hdop_x100 / 100, f.hdop_x100 % 100,
-              gps_fix_usable(f) ? 1 : 0);
+        //Serial.printf("GPS,%lu,%lu,%lu,%ld,%ld,%ld,%u,%u,%u.%02u,%d\n",
+        //      (unsigned long)f.seq, (unsigned long)f.t_rx_ms, (unsigned long)f.utc_ms,
+        //      (long)f.lat_e7, (long)f.lon_e7, (long)f.alt_mm,
+        //      f.quality, f.nsat, f.hdop_x100 / 100, f.hdop_x100 % 100,
+        //      gps_fix_usable(f) ? 1 : 0);
     }
 
     // gestion du temps

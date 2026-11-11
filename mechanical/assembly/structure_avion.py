@@ -43,7 +43,9 @@ OUTPUT_FILE = (
 # ============================================================
 
 PLATE_THICKNESS = 3.0
-POSITION_AILE_X = 70.0
+POSITION_AILE_X = 60.0
+POSITION_AILE_Z = 12.0
+ANGLE_AILE = 2.50
 
 
 # ============================================================
@@ -238,18 +240,81 @@ PIECES = {
     # AILES
     # --------------------------------------------------------
 
+    "tige_carbone_12": [
+        (0, 0),
+        (0, 500),
+        (12, 500),
+        (12, 0),
+    ],
+
     "plat_aile_droite": [
         (0, 0),
         (0, -650),
         (240, -650),
         (240, 0),
     ],
-
+    
+    "avant_aile_droite": [
+        (0, 0),
+        (0, -650),
+        (65, -650),
+        (65, 0),
+    ],
+    
+    "haut_avant_aile_droite": [
+        (0, 0),
+        (0, -650),
+        (70, -650),
+        (70, 0),
+    ],
+    
+    "haut_arriere_aile_droite": [
+        (0, 0),
+        (0, -650),
+        (190, -650),
+        (190, 0),
+    ],
+    
+    "aileront_aile_droite": [
+        (0, 0),
+        (0, -650),
+        (40, -610),
+        (40, -40),
+    ],
+    
     "plat_aile_gauche": [
         (0, 0),
         (0, 650),
         (240, 650),
         (240, 0),
+    ],
+    
+    "avant_aile_gauche": [
+        (0, 0),
+        (0, 650),
+        (65, 650),
+        (65, 0),
+    ],
+    
+    "haut_avant_aile_gauche": [
+        (0, 0),
+        (0, 650),
+        (70, 650),
+        (70, 0),
+    ],
+    
+    "haut_arriere_aile_gauche": [
+        (0, 0),
+        (0, 650),
+        (190, 650),
+        (190, 0),
+    ],
+    
+    "aileront_aile_gauche": [
+        (0, 0),
+        (0, 650),
+        (40, 610),
+        (40, 40),
     ],
 
 }
@@ -464,12 +529,25 @@ ASSEMBLAGE = {
         "color": (0.90, 0.90, 0.90),
 
     },
+    
+
+    "tige_carbone_12": {
+
+        "translation": (-POSITION_AILE_X-60, -250+30, 63-POSITION_AILE_Z+12-60*ANGLE_AILE*0.01745329),
+
+        "rotation": (0, 180-ANGLE_AILE, 0.0),
+
+        "thickness": 12,
+
+        "color": (0.50, 0.50, 0.90),
+
+    },
 
     "plat_aile_droite": {
 
-        "translation": (-POSITION_AILE_X, 0, 63-15),
+        "translation": (-POSITION_AILE_X, -3, 63-POSITION_AILE_Z),
 
-        "rotation": (0, 180-2.5, 0.0),
+        "rotation": (0, 180-ANGLE_AILE, 0.0),
 
         "thickness": PLATE_THICKNESS,
 
@@ -477,11 +555,61 @@ ASSEMBLAGE = {
 
     },
 
+    "avant_aile_droite": {
+
+        "translation": (-POSITION_AILE_X+5, -3, 63-POSITION_AILE_Z+6),
+
+        "rotation": (0, 180-ANGLE_AILE, 0.0),
+
+        "thickness": 2*PLATE_THICKNESS,
+
+        "color": (0.50, 0.50, 0.90),
+
+    },
+
+
+    "haut_avant_aile_droite": {
+
+        "translation": (-POSITION_AILE_X, -3, 63-POSITION_AILE_Z+9),
+
+        "rotation": (0, 180-ANGLE_AILE+5, 0.0),
+
+        "thickness": PLATE_THICKNESS,
+
+        "color": (0.50, 0.50, 0.90),
+
+    },
+    
+    "haut_arriere_aile_droite": {
+
+        "translation": (-POSITION_AILE_X-70, -3, 63-POSITION_AILE_Z+12),
+
+        "rotation": (0, 180-ANGLE_AILE-4, 0.0),
+
+        "thickness": PLATE_THICKNESS,
+
+        "color": (0.50, 0.50, 0.90),
+
+    },
+    
+    
+    "aileront_aile_droite": {
+
+        "translation": (-POSITION_AILE_X-258, -3, 63-POSITION_AILE_Z-ANGLE_AILE*240*0.01745329),
+
+        "rotation": (0, 180-ANGLE_AILE-5, 0.0),
+
+        "thickness": PLATE_THICKNESS,
+
+        "color": (0.90, 0.50, 0.50),
+
+    },
+    
     "plat_aile_gauche": {
 
-        "translation": (-POSITION_AILE_X, 63, 63-15),
+        "translation": (-POSITION_AILE_X, 63, 63-POSITION_AILE_Z),
 
-        "rotation": (0, 180-2.5, 0.0),
+        "rotation": (0, 180-ANGLE_AILE, 0.0),
 
         "thickness": PLATE_THICKNESS,
 
@@ -489,6 +617,54 @@ ASSEMBLAGE = {
 
     },
 
+    
+    "avant_aile_gauche": {
+    
+        "translation": (-POSITION_AILE_X+5, 63, 63-POSITION_AILE_Z+6),
+    
+        "rotation": (0, 180-ANGLE_AILE, 0.0),
+    
+        "thickness": 2*PLATE_THICKNESS,
+    
+        "color": (0.50, 0.50, 0.90),
+    
+    },
+    
+    "haut_avant_aile_gauche": {
+    
+        "translation": (-POSITION_AILE_X, 63, 63-POSITION_AILE_Z+9),
+    
+        "rotation": (0, 180-ANGLE_AILE+5, 0.0),
+    
+        "thickness": PLATE_THICKNESS,
+    
+        "color": (0.50, 0.50, 0.90),
+    
+    },
+    
+    "haut_arriere_aile_gauche": {
+    
+        "translation": (-POSITION_AILE_X-70, 63, 63-POSITION_AILE_Z+12),
+    
+        "rotation": (0, 180-ANGLE_AILE-4, 0.0),
+    
+        "thickness": PLATE_THICKNESS,
+    
+        "color": (0.50, 0.50, 0.90),
+    
+    },
+    
+    "aileront_aile_gauche": {
+
+    "translation": (-POSITION_AILE_X-258, 63, 63-POSITION_AILE_Z-ANGLE_AILE*240*0.01745329),
+
+    "rotation": (0, 180-ANGLE_AILE-5, 0.0),
+
+    "thickness": PLATE_THICKNESS,
+
+    "color": (0.90, 0.50, 0.50),
+
+},
 
 }
 

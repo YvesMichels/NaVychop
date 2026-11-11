@@ -1,0 +1,183 @@
+{
+  "_info": {
+    "unite": "mm",
+    "convention": "Chaque point est (a, b) : a = largeur de la pièce, b = longueur. Même convention que polygon_to_face() (x, y local FreeCAD) dans structure_avion.py et que les colonnes [y, x] de affiche_obj() dans decoupe_plaque_fuselage.py.",
+    "usage": "Lu par structure_avion.py (assemblage 3D) et decoupe_plaque_fuselage.py (patron de découpe)."
+  },
+  "pieces": {
+    "fuselage_horizontal_avant": {
+      "description": "Fuselage, plaque horizontale avant : rectangle 65 x 300 mm",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 300], [65, 300], [65, 0]]
+    },
+    "fuselage_horizontal_arriere": {
+      "description": "Fuselage, plaque horizontale arrière : trapèze 65 -> 45 mm sur 350 mm (sert aussi de fuselage_haut_queue dans la découpe)",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [10, 350], [55, 350], [65, 0]]
+    },
+    "fuselage_vertical_droit_avant": {
+      "description": "Fuselage, flanc droit avant : rectangle 60 x 300 mm",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 300], [60, 300], [60, 0]]
+    },
+    "fuselage_vertical_gauche_avant": {
+      "description": "Fuselage, flanc gauche avant : rectangle 60 x 300 mm",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 300], [60, 300], [60, 0]]
+    },
+    "fuselage_vertical_droit_arriere": {
+      "description": "Fuselage, flanc droit arrière : trapèze 60 -> 40 mm sur 350 mm",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [20, 350], [60, 350], [60, 0]]
+    },
+    "fuselage_vertical_gauche_arriere": {
+      "description": "Fuselage, flanc gauche arrière : trapèze 60 -> 40 mm sur 350 mm",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [20, 350], [60, 350], [60, 0]]
+    },
+    "bord_40x40": {
+      "description": "Bord / renfort carré 40 x 40 mm",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 40], [40, 40], [40, 0]]
+    },
+    "bord_60x60": {
+      "description": "Bord / renfort 60 x 60 mm avec encoche 30 x 30 mm",
+      "origine": "structure_avion.py",
+      "note": "decoupe_plaque_fuselage.py utilisait un carré plein 60 x 60 ; version avec encoche de structure_avion.py conservée",
+      "points": [[0, 0], [0, 15], [30, 15], [30, 45], [0, 45], [0, 60], [60, 60], [60, 0]]
+    },
+    "queue": {
+      "description": "Empennage (plaque principale de queue)",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 400], [100, 400], [150, 220], [250, 220], [250, 180], [150, 180], [100, 0]]
+    },
+    "gouverne_profondeur": {
+      "description": "Gouverne de profondeur : rectangle 40 x 400 mm",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 400], [40, 400], [40, 0]]
+    },
+    "box_queue_horizontal": {
+      "description": "Caisson de queue horizontal : triangle base 46 mm, hauteur 154 mm",
+      "origine": "structure_avion.py",
+      "note": "decoupe_plaque_fuselage.py utilisait (0,0),(20,154),(40,0) ; valeur de structure_avion.py conservée",
+      "points": [[0, 0], [23, 154], [46, 0]]
+    },
+    "box_queue_vertical_droit": {
+      "description": "Caisson de queue vertical droit : triangle rectangle 40 x 150 mm",
+      "origine": "structure_avion.py",
+      "note": "decoupe_plaque_fuselage.py utilisait une largeur de 45 mm (au lieu de 40) ; valeur de structure_avion.py conservée",
+      "points": [[0, 0], [0, 150], [40, 0]]
+    },
+    "box_queue_vertical_gauche": {
+      "description": "Caisson de queue vertical gauche : triangle rectangle 40 x 150 mm",
+      "origine": "structure_avion.py",
+      "note": "decoupe_plaque_fuselage.py utilisait une largeur de 45 mm (au lieu de 40) ; valeur de structure_avion.py conservée",
+      "points": [[0, 0], [0, 150], [40, 0]]
+    },
+    "aileron_lacet_droit": {
+      "description": "Aileron de lacet droit",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 20], [80, 100], [100, 100], [100, 70], [80, 70], [80, 0]]
+    },
+    "aileron_lacet_gauche": {
+      "description": "Aileron de lacet gauche",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 20], [80, 100], [100, 100], [100, 70], [80, 70], [80, 0]]
+    },
+    "gouverne_lacet_droit": {
+      "description": "Gouverne de lacet droite",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 50], [80, 50], [75, 45], [75, 0]]
+    },
+    "gouverne_lacet_gauche": {
+      "description": "Gouverne de lacet gauche",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 50], [80, 50], [75, 45], [75, 0]]
+    },
+    "tige_carbone_12": {
+      "description": "Tige carbone de 12 mm (longueur 500 mm)",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 500], [12, 500], [12, 0]]
+    },
+    "plat_aile_droite": {
+      "description": "Aile droite : plat",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, -650], [240, -650], [240, 0]]
+    },
+    "avant_aile_droite": {
+      "description": "Aile droite : avant",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, -650], [65, -650], [65, 0]]
+    },
+    "haut_avant_aile_droite": {
+      "description": "Aile droite : haut avant",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, -650], [70, -650], [70, 0]]
+    },
+    "haut_arriere_aile_droite": {
+      "description": "Aile droite : haut arriere",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, -650], [190, -650], [190, 0]]
+    },
+    "aileront_aile_droite": {
+      "description": "Aile droite : aileront",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, -650], [40, -610], [40, -40]]
+    },
+    "plat_aile_gauche": {
+      "description": "Aile gauche : plat",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 650], [240, 650], [240, 0]]
+    },
+    "avant_aile_gauche": {
+      "description": "Aile gauche : avant",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 650], [65, 650], [65, 0]]
+    },
+    "haut_avant_aile_gauche": {
+      "description": "Aile gauche : haut avant",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 650], [70, 650], [70, 0]]
+    },
+    "haut_arriere_aile_gauche": {
+      "description": "Aile gauche : haut arriere",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 650], [190, 650], [190, 0]]
+    },
+    "aileront_aile_gauche": {
+      "description": "Aile gauche : aileront",
+      "origine": "structure_avion.py",
+      "points": [[0, 0], [0, 650], [40, 610], [40, 40]]
+    },
+    "fuselage_haut_ailes": {
+      "description": "Fuselage, plaque supérieure zone ailes : rectangle 65 x 250 mm",
+      "origine": "decoupe_plaque_fuselage.py",
+      "points": [[0, 0], [0, 250], [65, 250], [65, 0]]
+    },
+    "bord_65x25": {
+      "description": "Bord rectangle 65 x 25 mm",
+      "origine": "decoupe_plaque_fuselage.py",
+      "points": [[0, 0], [0, 25], [65, 25], [65, 0]]
+    },
+    "renfort_aile": {
+      "description": "Renfort d'aile (découpé dans la plaque fuselage)",
+      "origine": "decoupe_plaque_fuselage.py",
+      "points": [[0, 0], [0, 10], [20, 10], [20, 175], [0, 175], [0, 185], [60, 185], [60, 0]]
+    },
+    "piece_support_avant_aile": {
+      "description": "Pièce support avant d'aile",
+      "origine": "decoupe_plaque_fuselage.py",
+      "points": [[0, 0], [0, 20], [25, 20], [25, 40], [0, 40], [0, 60], [20, 60], [20, 57], [48, 57], [48, 3], [20, 3], [20, 0]]
+    },
+    "piece_support_arriere_aile": {
+      "description": "Pièce support arrière d'aile",
+      "origine": "decoupe_plaque_fuselage.py",
+      "points": [[0, 0], [0, 20], [25, 20], [25, 40], [0, 40], [0, 60], [20, 60], [20, 57], [42, 57], [42, 3], [20, 3], [20, 0]]
+    },
+    "renfort_lateral": {
+      "description": "Renfort latéral 10 x 54 mm",
+      "origine": "decoupe_plaque_fuselage.py",
+      "points": [[0, 0], [0, 54], [10, 54], [10, 0]]
+    }
+  }
+}

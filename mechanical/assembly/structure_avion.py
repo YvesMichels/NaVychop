@@ -13,11 +13,15 @@ Repère global :
     Z = vertical
 
 Architecture :
-    1. Géométrie des pièces : PIECES
+    1. Géométrie des pièces : fichier de référence PIECES_FILE
+       (pieces_fuselage.json, partagé avec decoupe_plaque_fuselage.py),
+       chargé dans le dictionnaire PIECES
     2. Configuration : ASSEMBLAGE
     3. Construction automatique : boucle d'assemblage
 
 """
+
+import json
 
 import FreeCAD as App
 import Part
@@ -30,6 +34,14 @@ import Part
 NOSE_FILE = (
     r"C:\Users\miche\Documents\Work\Navychop"
     r"\navychop\mechanical\CAD\pointe_avant.FCStd"
+)
+
+# Fichier de référence de la géométrie des pièces
+# (partagé avec decoupe_plaque_fuselage.py)
+
+PIECES_FILE = (
+    r"C:\Users\miche\Documents\Work\Navychop"
+    r"\navychop\mechanical\assembly\pieces_fuselage.json"
 )
 
 OUTPUT_FILE = (
@@ -60,264 +72,25 @@ NOSE_ROTATION = (0.0, 0.0, 0.0)
 # GEOMETRIE DES PIECES
 # ============================================================
 
-PIECES = {
+def load_pieces(path):
 
-    # --------------------------------------------------------
-    # FUSELAGE HORIZONTAL AVANT
-    # Rectangle 65 x 300 mm
-    # --------------------------------------------------------
+    """
+    Charge la géométrie des pièces depuis le fichier de référence.
 
-    "fuselage_horizontal_avant": [
-        (0, 0),
-        (0, 300),
-        (65, 300),
-        (65, 0),
-    ],
+    Retourne {nom: [(x, y), ...]} en mm.
+    """
 
-    # --------------------------------------------------------
-    # FUSELAGE HORIZONTAL ARRIERE
-    # Trapeze
-    # --------------------------------------------------------
+    with open(path, encoding="utf-8") as f:
 
-    "fuselage_horizontal_arriere": [
-        (0, 0),
-        (10, 350),
-        (55, 350),
-        (65, 0),
-    ],
-        
-    # --------------------------------------------------------
-    # FUSELAGE HORIZONTAL AVANT
-    # Rectangle 60 x 300 mm
-    # --------------------------------------------------------
-    
-    "fuselage_vertical_droit_avant": [
-        (0, 0),
-        (0, 300),
-        (60, 300),
-        (60, 0),
-    ],
-    
-    # --------------------------------------------------------
-    # FUSELAGE HORIZONTAL AVANT
-    # Rectangle 60 x 300 mm
-    # --------------------------------------------------------
-    
-    "fuselage_vertical_gauche_avant": [
-        (0, 0),
-        (0, 300),
-        (60, 300),
-        (60, 0),
-    ],
-    
-    # --------------------------------------------------------
-    # FUSELAGE HORIZONTAL ARRIERE
-    # Trapeze
-    # --------------------------------------------------------
-    
-    "fuselage_vertical_droit_arriere": [
-        (0, 0),
-        (20, 350),
-        (60, 350),
-        (60, 0),
-    ],
-    
-    # --------------------------------------------------------
-    # FUSELAGE HORIZONTAL ARRIERE
-    # Trapeze
-    # --------------------------------------------------------
-    
-    "fuselage_vertical_gauche_arriere": [
-        (0, 0),
-        (20, 350),
-        (60, 350),
-        (60, 0),
-    ],
+        data = json.load(f)
 
-    # --------------------------------------------------------
-    # BORDS / RENFORTS
-    # --------------------------------------------------------
+    return {
+        name: [tuple(point) for point in piece["points"]]
+        for name, piece in data["pieces"].items()
+    }
 
-    "bord_40x40": [
-        (0, 0),
-        (0, 40),
-        (40, 40),
-        (40, 0),
-    ],
 
-    "bord_60x60": [
-        (0, 0),
-        (0, 15),
-        (30, 15),
-        (30, 45),
-        (0, 45),
-        (0, 60),
-        (60, 60),
-        (60, 0),
-    ],
-    
-    # --------------------------------------------------------
-    # EMPENNAGE
-    # --------------------------------------------------------
-
-    "queue": [
-        (0, 0),
-        (0, 400),
-        (100, 400),
-        (150, 220),
-        (250, 220),
-        (250, 180),
-        (150, 180),
-        (100, 0),
-    ],
-
-    "gouverne_profondeur": [
-        (0, 0),
-        (0, 400),
-        (40, 400),
-        (40, 0),
-    ],
-
-    "box_queue_horizontal": [
-        (0, 0),
-        (23, 154),
-        (46, 0),
-    ],
-
-    "box_queue_vertical_droit": [
-        (0, 0),
-        (0, 150),
-        (40, 0),
-    ],
-
-    "box_queue_vertical_gauche": [
-        (0, 0),
-        (0, 150),
-        (40, 0),
-    ],
-    
-    # --------------------------------------------------------
-    # COMMANDES LACET
-    # --------------------------------------------------------
-
-    "aileron_lacet_droit": [
-        (0, 0),
-        (0, 20),
-        (80, 100),
-        (100, 100),
-        (100, 70),
-        (80, 70),
-        (80, 0),
-    ],
-
-    "aileron_lacet_gauche": [
-        (0, 0),
-        (0, 20),
-        (80, 100),
-        (100, 100),
-        (100, 70),
-        (80, 70),
-        (80, 0),
-    ],
-
-    "gouverne_lacet_droit": [
-        (0, 0),
-        (0, 50),
-        (80, 50),
-        (75, 45),
-        (75, 0),
-    ],
-
-    "gouverne_lacet_gauche": [
-        (0, 0),
-        (0, 50),
-        (80, 50),
-        (75, 45),
-        (75, 0),
-    ],
-
-    # --------------------------------------------------------
-    # AILES
-    # --------------------------------------------------------
-
-    "tige_carbone_12": [
-        (0, 0),
-        (0, 500),
-        (12, 500),
-        (12, 0),
-    ],
-
-    "plat_aile_droite": [
-        (0, 0),
-        (0, -650),
-        (240, -650),
-        (240, 0),
-    ],
-    
-    "avant_aile_droite": [
-        (0, 0),
-        (0, -650),
-        (65, -650),
-        (65, 0),
-    ],
-    
-    "haut_avant_aile_droite": [
-        (0, 0),
-        (0, -650),
-        (70, -650),
-        (70, 0),
-    ],
-    
-    "haut_arriere_aile_droite": [
-        (0, 0),
-        (0, -650),
-        (190, -650),
-        (190, 0),
-    ],
-    
-    "aileront_aile_droite": [
-        (0, 0),
-        (0, -650),
-        (40, -610),
-        (40, -40),
-    ],
-    
-    "plat_aile_gauche": [
-        (0, 0),
-        (0, 650),
-        (240, 650),
-        (240, 0),
-    ],
-    
-    "avant_aile_gauche": [
-        (0, 0),
-        (0, 650),
-        (65, 650),
-        (65, 0),
-    ],
-    
-    "haut_avant_aile_gauche": [
-        (0, 0),
-        (0, 650),
-        (70, 650),
-        (70, 0),
-    ],
-    
-    "haut_arriere_aile_gauche": [
-        (0, 0),
-        (0, 650),
-        (190, 650),
-        (190, 0),
-    ],
-    
-    "aileront_aile_gauche": [
-        (0, 0),
-        (0, 650),
-        (40, 610),
-        (40, 40),
-    ],
-
-}
+PIECES = load_pieces(PIECES_FILE)
 
 
 # ============================================================
@@ -854,7 +627,10 @@ def check_configuration():
         set(ASSEMBLAGE.keys()) - set(PIECES.keys())
     )
 
-    missing_config = (
+    # Le fichier de référence contient aussi des pièces qui ne sont
+    # que dans le patron de découpe : elles ne sont pas assemblées ici.
+
+    not_assembled = (
         set(PIECES.keys()) - set(ASSEMBLAGE.keys())
     )
 
@@ -865,18 +641,20 @@ def check_configuration():
             + str(missing_geometry)
         )
 
-    if missing_config:
-
-        raise ValueError(
-            "Configuration manquante pour : "
-            + str(missing_config)
-        )
-
     print(
         "Configuration valide :",
+        len(ASSEMBLAGE),
+        "pièces assemblées sur",
         len(PIECES),
-        "pièces."
+        "pièces de référence."
     )
+
+    if not_assembled:
+
+        print(
+            "Pièces de référence non assemblées :",
+            sorted(not_assembled)
+        )
 
 
 # ============================================================

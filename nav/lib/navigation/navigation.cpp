@@ -121,35 +121,6 @@ float computePitchCommandSignal(float R[3][3], float pitch_cmd) {
 
     if (dot < 0.0f) return (cross > 0.0f) ? 1.0f : -1.0f;
     return cross;
-  /*  
-  // projection de y_avion dans le plan horizontal
-    float y_sol[2] = {R[0][1], R[1][1]};
-
-    float norm = sqrtf(y_sol[0]*y_sol[0] + y_sol[1]*y_sol[1]);
-    if (norm< 1e-6f) return 0.0f;
-
-    // direction latérale horizontale
-    y_sol[0] /= norm;
-    y_sol[1] /= norm;
-
-    // composante verticale
-    float z = R[2][1];
-
-    //  cos(roll_mesuré) ≈ norme projection horizontale
-    float y = norm;
-
-    // cible
-    float y_target = cosf(pitch_cmd);
-    float z_target = sinf(pitch_cmd);
-
-    float cross = y * z_target - z * y_target;
-    float dot   = y * y_target + z * z_target;
-
-    if (dot < 0.0f) {
-        return (cross > 0.0f) ? 1.0f : -1.0f;
-    }
-
-    return cross;*/
 }
 
 float computeRollCommandSignal(float R[3][3], float roll_cmd) {
@@ -168,35 +139,6 @@ float computeRollCommandSignal(float R[3][3], float roll_cmd) {
 
     if (dot < 0.0f) return (cross > 0.0f) ? 1.0f : -1.0f;
     return cross;
-  /*
-  // Construction X_sol
-    float x_sol[2] = {R[0][0], R[1][0]};
-    float norm = sqrtf(x_sol[0]*x_sol[0] + x_sol[1]*x_sol[1]);
-
-    if (norm < 1e-6f) return 0.0f;
-
-    // direction avant horizontale
-    x_sol[0] /= norm;
-    x_sol[1] /= norm;
-
-    // Projection axe avion sur Z
-    float z = R[2][0];
-
-    // cos(pitch_mesuré) ≈ norme projection horizontale
-    float x = norm;
-
-    // cible
-    float x_target = cosf(roll_cmd);
-    float z_target = sinf(roll_cmd);
-
-    float cross = x * z_target - z * x_target;
-    float dot   = x * x_target + z * z_target;
-
-    if (dot < 0.0f) {
-        return (cross > 0.0f) ? 1.0f : -1.0f;
-    }
-
-    return cross;*/
 }
 
 

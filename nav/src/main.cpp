@@ -13,6 +13,7 @@
 #include "control.h"
 #include "datalink.h"
 #include "gps.h"
+#include "logging.h"
 
 typedef struct {
     int32_t dummy;   // index 0 non utilisé ici
@@ -250,6 +251,7 @@ void setup()
         Serial.println("Erreur LittleFS");
         return;
     }
+    log_init();
 
     Serial.println("LittleFS OK");
 
@@ -330,11 +332,11 @@ void loop()
     }
 
     // Événement de sauvegarde (consommé une seule fois)
-    if (cmd_state.save_pending)
+    /*if (cmd_state.save_pending)
     {
         save_en = cmd_state.save_req;
         cmd_state.save_pending = false;
-    }
+    }*/ // ancien log
 
     // Sorties de commande (sécurité automatique si lien non OK)
     motor_6 = cmd_state.motor_6;
@@ -364,7 +366,7 @@ void loop()
 
     motors_control(servo1, servo2, servo3, servo4, esc);
 
-    if(save_en == LOG_RECORDING) {
+    /*if(save_en == LOG_RECORDING) {
         if(addLog(logBuffer[logIndex], logIndex, t_cur-t_0, accel[0], accel[1], accel[2], magneto[0], magneto[1], magneto[2], q_M_GRV, att_states, yaw_6, pitch_6, roll_6, control_states, esc) == 1)
         {
             saveLogsToFlash(logBuffer, flash_logIndex);
@@ -379,7 +381,13 @@ void loop()
         logIndex = 0;
     }
     save_en = LOG_IDLE;                                   // fin de l'enregistrement
-}
+    }*/ // ancien log
+    if (cmd_state.save_pending) {
+        if (cmd_state.save_req == 1) log_start();
+        else if (cmd_state.save_req == 2) log_stop();
+            cmd_state.save_pending = false;
+    }
+
     checkUartAndTriggerDump(sync_state, logBuffer);
 
     // gestion GNSS
@@ -391,6 +399,22 @@ void loop()
         //      f.quality, f.nsat, f.hdop_x100 / 100, f.hdop_x100 % 100,
         //      gps_fix_usable(f) ? 1 : 0);
     }
+
+
+
+    // logging
+    static uint32_t last_acc = 0, last_mag = 0;
+    const uint32_t t_log = t_cur - t_0;
+    if (log_active()) {
+        log_push_fast(t_log, q_M_GRV, att_states, control_states, yaw_6, pitch_6, roll_6, esc);
+        if (cpt_acc != last_acc) log_push_acc(t_log, accel);
+        if (cpt_mag != last_mag) log_push_mag(t_log, magneto);
+        if (gps.new_fix) log_push_gps(gps.fix);
+    }
+    last_acc = cpt_acc; last_mag = cpt_mag;
+    gps.new_fix = false;
+    log_service();   // sans effet si LOG_USE_TASK = 1
+
 
     // gestion du temps
   t_target = t_target + d_t;

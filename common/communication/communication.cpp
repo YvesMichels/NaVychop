@@ -2,6 +2,7 @@
 #include <LoRa.h>
 #include "config.h"         // SYNC_1..4, TRANSFORM_FORMAT, TRANSFORM_FORMAT, LORA_* : source unique
 #include "communication.h"
+#include "logging.h"
 
 #define Q4_SCALE   16.0f
 #define Q6_SCALE   64.0f
@@ -450,7 +451,8 @@ void checkUartAndTriggerDump(uint8_t sync_state, logState *buffer)
                     // =========================
                     // TRIGGER DUMP CSV
                     // =========================
-                    sendLogsCSVFromFlash();
+                    //sendLogsCSVFromFlash();
+                    log_dump_blocking();   // la boucle d'asservissement est suspendue : au sol uniquement
                 }
                 else
                 {

@@ -4,6 +4,7 @@ Exemples :
     python run_sim.py                          # cercle de 100 m de rayon
     python run_sim.py --traj eight             # huit
     python run_sim.py --traj eight --wind 4 --wind-from 270 --duration 240
+    python run_sim.py --estimator kalman       # avec hybridation GPS + IMU + baro
     python run_sim.py --no-show --out res.png  # sans fenêtre (enregistre seulement l'image)
 """
 import argparse
@@ -13,6 +14,7 @@ import numpy as np
 
 from aircraft import Aircraft
 from controller import L1Params, L1WaypointController
+from estimators import GpsImuBaroEstimator
 from geo import GeoOrigin
 from mission import Mission, circle, distance_to_path, figure_eight
 from sensors import SensorSuite
@@ -29,6 +31,8 @@ def main():
     ap.add_argument("--duration", type=float, default=150.0, help="durée simulée (s)")
     ap.add_argument("--wind", type=float, default=0.0, help="vitesse du vent (m/s)")
     ap.add_argument("--wind-from", type=float, default=270.0, help="direction D'OÙ vient le vent (deg, 0 = Nord)")
+    ap.add_argument("--estimator", choices=["gps", "kalman"], default="gps",
+                    help="gps : GPS brut extrapolé (défaut) ; kalman : hybridation GPS + IMU + baro")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-show", action="store_true")
     ap.add_argument("--out", default="sim_result.png")
@@ -58,7 +62,8 @@ def main():
     # --- les trois briques : avion, capteurs, contrôleur
     ac = Aircraft(wind_ned=wind, altitude=args.alt, heading=0.0, speed=args.speed)
     sensors = SensorSuite.default(origin, seed=args.seed)
-    ctrl = L1WaypointController(mission, origin, L1Params(cruise_speed=args.speed))
+    estimator = GpsImuBaroEstimator(origin) if args.estimator == "kalman" else None
+    ctrl = L1WaypointController(mission, origin, L1Params(cruise_speed=args.speed), estimator=estimator)
     sim = Simulator(ac, sensors, ctrl, origin, dt=0.01)
 
     log = sim.run(args.duration)

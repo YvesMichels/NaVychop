@@ -5,8 +5,8 @@ Interface : un contrôleur reçoit à CHAQUE pas de simulation les dernières me
 Il n'a jamais accès à l'état vrai. Pour tester un autre algorithme : hériter de `Controller`.
 
 Premier algorithme fourni : `L1WaypointController`
-  - estimation : position GPS extrapolée avec la vitesse GPS (compense la cadence 5 Hz et le retard),
-    altitude = baromètre filtré, vitesse air = Pitot filtré ;
+  - estimation : déléguée à un `Estimator` (estimators.py). Par défaut : position GPS extrapolée avec la
+    vitesse GPS, altitude = baromètre filtré, vitesse air = Pitot filtré ;
   - guidage latéral : loi L1 (Park et al.) sur la branche [balise précédente -> balise courante] ;
   - guidage vertical : PI + amortissement sur la vitesse verticale -> consigne de tangage ;
   - vitesse : PI sur la vitesse air -> poussée ;
@@ -19,7 +19,8 @@ from dataclasses import dataclass
 
 from aircraft import G, Command
 from geo import GeoOrigin, wrap_pi
-from mission import Mission, NavState
+from estimators import Estimator, ExtrapolationEstimator
+from mission import Mission
 
 
 class Controller:
@@ -50,52 +51,28 @@ class L1Params:
 
 
 class L1WaypointController(Controller):
-    def __init__(self, mission: Mission, origin: GeoOrigin, params: L1Params | None = None):
+    def __init__(self, mission: Mission, origin: GeoOrigin, params: L1Params | None = None,
+                 estimator: Estimator | None = None):
         self.mission = mission
         self.origin = origin
         self.p = params or L1Params()
+        self.estimator = estimator or ExtrapolationEstimator(origin)   # remplaçable : hybridation GPS/IMU/baro...
         self.debug = {}
-        # mémoire des capteurs
-        self._gps = None            # (t_mesure, nord, est, vn, ve, vd)
-        self._alt = None            # altitude filtrée (m)
-        self._airspeed = None
         self._course = 0.0
         self._started = False
         self._t_prev = None
         self._i_alt = 0.0
         self._i_speed = 0.0
 
-    # ---------------------------------------------------------------- estimation
-    def _ingest(self, meas):
-        g = meas.get("gps")
-        if g is not None:
-            n, e = self.origin.to_local(g.lat, g.lon)
-            self._gps = (g.t, n, e, g.vel_ned[0], g.vel_ned[1], g.vel_ned[2])
-            if meas.get("baro") is None and self._alt is None:
-                self._alt = g.alt - self.origin.alt0
-        b = meas.get("baro")
-        if b is not None:
-            self._alt = b.altitude if self._alt is None else self._alt + 0.2 * (b.altitude - self._alt)
-        a = meas.get("pitot")
-        if a is not None:
-            self._airspeed = a.airspeed if self._airspeed is None else self._airspeed + 0.2 * (a.airspeed - self._airspeed)
-
-    def _estimate(self, t) -> NavState:
-        tg, n, e, vn, ve, vd = self._gps
-        dt = max(0.0, t - tg)                       # extrapolation depuis la dernière mesure GPS
-        va = self._airspeed if self._airspeed is not None else math.hypot(vn, ve)
-        return NavState(t, n + vn * dt, e + ve * dt, self._alt, vn, ve, vd, va)
-
     # ---------------------------------------------------------------- boucle de contrôle
     def update(self, t, meas) -> Command:
         P = self.p
-        self._ingest(meas)
-        if self._gps is None or self._alt is None:
+        nav = self.estimator.update(t, meas)
+        if nav is None:
             return Command(pitch=P.pitch_trim, throttle=P.thr_trim)     # attente du premier fix
 
         dt = 0.0 if self._t_prev is None else t - self._t_prev
         self._t_prev = t
-        nav = self._estimate(t)
         if not self._started:
             self.mission.start(nav)
             self._started = True
@@ -146,5 +123,5 @@ class L1WaypointController(Controller):
         yaw_rate = G * math.tan(roll_cmd) / max(nav.airspeed, 5.0)
 
         self.debug = {"target": self.mission.index, "xtrack_est": xtrack, "h_cmd": h_cmd,
-                      "h_est": nav.alt, "eta": eta, "l1": l1, "roll_cmd": roll_cmd}
+                      "h_est": nav.alt, "est_n": nav.north, "est_e": nav.east, "eta": eta, "l1": l1, "roll_cmd": roll_cmd}
         return Command(roll=roll_cmd, pitch=pitch_cmd, yaw_rate=yaw_rate, throttle=throttle)

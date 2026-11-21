@@ -43,6 +43,20 @@ class Simulator:
         self.ac, self.sensors, self.controller, self.origin = aircraft, sensors, controller, origin
         self.dt, self.log_every = dt, log_every
 
+    def step(self, override=None):
+        """Avance d'UN pas (usage interactif, voir live_sim.py). Même ordre que run() :
+        capteurs -> contrôleur -> dynamique. `override(cmd) -> Command` permet de modifier la commande
+        calculée par le contrôleur (pilotage manuel) ; le contrôleur, lui, ne sait pas qu'on l'a surchargée.
+        Retourne (t, meas, cmd_appliquée)."""
+        ac = self.ac
+        t = ac.t
+        meas = self.sensors.read_all(t, ac)
+        cmd = self.controller.update(t, meas)
+        if override is not None:
+            cmd = override(cmd)
+        ac.step(cmd, self.dt)
+        return t, meas, cmd
+
     def run(self, duration: float, stop_when_mission_finished: bool = False) -> SimLog:
         ac, dt = self.ac, self.dt
         rows, gps_rows, dbg = [], [], []
@@ -65,9 +79,9 @@ class Simulator:
                 break
         a = np.array(rows)
         debug = {}
-        if dbg and dbg[0]:
-            for key in dbg[0]:
-                debug[key] = np.array([d.get(key, np.nan) for d in dbg], dtype=float)
+        keys = {key for d in dbg for key in d}          # union : le contrôleur peut ne rien publier avant son 1er fix
+        for key in sorted(keys):
+            debug[key] = np.array([d.get(key, np.nan) for d in dbg], dtype=float)
         return SimLog(t=a[:, 0], pos=a[:, 1:4], vel=a[:, 4:7], euler=a[:, 7:10], omega=a[:, 10:13],
                       airspeed=a[:, 13], cmd=a[:, 14:18], gps=np.array(gps_rows), debug=debug,
                       crashed=ac.crashed)

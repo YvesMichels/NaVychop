@@ -29,7 +29,7 @@
 #define LOG_TASK_CORE       0        // loop() d'Arduino tourne sur le coeur 1
 #define LOG_TASK_PRIO       1
 #define LOG_TASK_STACK      8192
-#define LOG_FORMAT_VERSION  1
+#define LOG_FORMAT_VERSION  2          // 1 -> 2 : ajout de REC_VISION
 
 // ---------------------------------------------------------------------------
 // Format du fichier : [LogFileHeader] puis une suite d'enregistrements.
@@ -40,7 +40,8 @@ enum : uint8_t {
     REC_FAST = 0xA1,   // à chaque boucle (d_t)
     REC_ACC  = 0xA2,   // à chaque nouvel échantillon d'accélération
     REC_MAG  = 0xA3,   // à chaque nouvel échantillon de magnétomètre
-    REC_GPS  = 0xA4    // à chaque nouvelle phrase GGA valide
+    REC_GPS  = 0xA4,   // à chaque nouvelle phrase GGA valide
+    REC_VISION = 0xA5  // à chaque nouvelle trame de la carte vision
 };
 
 #pragma pack(push, 1)
@@ -86,6 +87,16 @@ struct RecGps {            // 15 octets
     uint8_t  nsat;
 };
 
+struct RecVision {          // 12 octets
+    uint8_t  type;          // REC_VISION
+    uint16_t t16;           // date de l'estimation fournie par la carte vision (ms)
+    int16_t  theta;
+    int16_t  tx;
+    int16_t  ty;
+    int16_t  div;
+    uint8_t  cost;
+};
+
 #pragma pack(pop)
 
 static_assert(sizeof(LogFileHeader) == 8,  "LogFileHeader");
@@ -93,6 +104,7 @@ static_assert(sizeof(RecFast) == 34,       "RecFast");
 static_assert(sizeof(RecAcc)  == 9,        "RecAcc");
 static_assert(sizeof(RecMag)  == 9,        "RecMag");
 static_assert(sizeof(RecGps)  == 15,       "RecGps");
+static_assert(sizeof(RecVision) == 12, "RecVision");
 
 struct LogStats {
     uint32_t n_blocks;       // blocs écrits
@@ -117,6 +129,7 @@ void log_push_fast(uint32_t t_ms, const Quaternion &q, const AttitudeState &att,
 void log_push_acc(uint32_t t_ms, const float a[3]);
 void log_push_mag(uint32_t t_ms, const float m[3]);
 void log_push_gps(const GpsFix &f);
+void log_push_vision(uint16_t t16, int16_t theta, int16_t tx, int16_t ty, int16_t div, uint8_t cost);
 
 // --- Restitution ---
 bool log_dump_blocking();              // dump BLOQUANT, CRC par trame, de tout le fichier sur Serial ; au sol uniquement

@@ -15,20 +15,6 @@
 #include "gps.h"
 #include "logging.h"
 
-typedef struct {
-    int32_t dummy;   // index 0 non utilisé ici
-    int32_t theta;   // index 1
-    int32_t tx;      // index 2
-    int32_t ty;      // index 3
-} transform_param_q16_t;
-
-typedef struct {
-    int16_t theta;
-    int16_t tx;
-    int16_t ty;
-    int32_t logs[16];
-    uint8_t checksum;
-} vision_frame_t;
 
 // paramètres systeme
 parameters system_param;
@@ -102,56 +88,6 @@ uint16_t flash_logIndex = 0;
 uint8_t save_en = LOG_IDLE;
 uint8_t sync_state = 0;
 
-bool readVisionFrame(vision_frame_t &out)
-{
-    static uint8_t buf[VISION_FRAME_SIZE];
-    static uint8_t idx = 0;
-
-    while (Serial1.available()) {
-        uint8_t b = Serial1.read();
-
-        if (idx == 0 && b != SYNC_1) continue;
-        if (idx == 1 && b != SYNC_2) { idx = 0; continue; }
-        if (idx == 2 && b != SYNC_3) { idx = 0; continue; }
-        if (idx == 3 && b != SYNC_4) { idx = 0; continue; }
-
-        buf[idx++] = b;
-
-        if (idx == VISION_FRAME_SIZE) {
-            idx = 0;
-
-            // checksum
-            uint8_t cs = 0;
-            for (int i = 0; i < VISION_FRAME_SIZE - 1; i++)
-                cs ^= buf[i];
-
-            if (cs != buf[VISION_FRAME_SIZE - 1])
-                return false;
-
-            if (buf[4] != TRANSFORM_FORMAT)
-                return false;
-
-            // --- décodage ---
-            out.theta = buf[5] | (buf[6] << 8);
-            out.tx    = buf[7] | (buf[8] << 8);
-            out.ty    = buf[9] | (buf[10] << 8);
-
-            int k = 11;
-            for (int i = 0; i < 16; i++) {
-                out.logs[i] =
-                    (buf[k]) |
-                    (buf[k+1] << 8) |
-                    (buf[k+2] << 16) |
-                    (buf[k+3] << 24);
-                k += 4;
-            }
-
-            out.checksum = cs;
-            return true;
-        }
-    }
-    return false;
-}
 
 void setup()
 {
@@ -331,13 +267,6 @@ void loop()
         lora_cmd_set(cmd_state, lora_cmd, t_cur);    // ignore les types hors 0x01 / 0x02
     }
 
-    // Événement de sauvegarde (consommé une seule fois)
-    /*if (cmd_state.save_pending)
-    {
-        save_en = cmd_state.save_req;
-        cmd_state.save_pending = false;
-    }*/ // ancien log
-
     // Sorties de commande (sécurité automatique si lien non OK)
     motor_6 = cmd_state.motor_6;
     yaw_6   = cmd_state.yaw_6;
@@ -346,7 +275,9 @@ void loop()
 
     // --- Vision ---
     vision_frame_t vf;
-    if (readVisionFrame(vf)) {
+    if (readVisionFrame(Serial1, vf, millis() - t_0)) {
+        if (log_active())
+            log_push_vision(vf.t16, vf.theta, vf.tx, vf.ty, vf.div, vf.cost);
         // Hybridation vision
     }
 
@@ -366,22 +297,6 @@ void loop()
 
     motors_control(servo1, servo2, servo3, servo4, esc);
 
-    /*if(save_en == LOG_RECORDING) {
-        if(addLog(logBuffer[logIndex], logIndex, t_cur-t_0, accel[0], accel[1], accel[2], magneto[0], magneto[1], magneto[2], q_M_GRV, att_states, yaw_6, pitch_6, roll_6, control_states, esc) == 1)
-        {
-            saveLogsToFlash(logBuffer, flash_logIndex);
-            flash_logIndex += 1;
-            logIndex = 0;
-        }
-    }
-    if(save_en == LOG_STOPPING) {
-    if(logIndex > 0) {                                    // paquet partiel à écrire
-        saveLogsToFlash(logBuffer, flash_logIndex, logIndex);
-        flash_logIndex += 1;
-        logIndex = 0;
-    }
-    save_en = LOG_IDLE;                                   // fin de l'enregistrement
-    }*/ // ancien log
     if (cmd_state.save_pending) {
         if (cmd_state.save_req == 1) log_start();
         else if (cmd_state.save_req == 2) log_stop();

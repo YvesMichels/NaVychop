@@ -327,3 +327,13 @@ void log_push_gps(const GpsFix &f)
     r.nsat = f.nsat;
     push(&r, sizeof(r));
 }
+
+void log_push_vision(uint16_t t16, int16_t theta, int16_t tx, int16_t ty, int16_t div, uint8_t cost)
+{
+    RecVision r;
+    r.type = REC_VISION;
+    r.t16 = t16;
+    r.theta = theta; r.tx = tx; r.ty = ty; r.div = div;
+    r.cost = cost;
+    push(&r, sizeof(r));
+}

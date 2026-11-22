@@ -49,7 +49,7 @@
 #define binpt_pitch 4           // mise à l'échelle pitch (puissance de 2 car quantification en virgule fixe)
 #define binpt_roll 4            // mise à l'échelle roll (puissance de 2 car quantification en virgule fixe)
 
-// --- Liaison LoRa : supervision / failsafe ---
+// Liaison LoRa : supervision / failsafe 
 #define LORA_FAILSAFE_TIMEOUT_MS  1000   // sans trame pilote valide (0x01/0x02) -> failsafe
 #define LORA_RESUME_FRAMES        1      // trames 0x01 consécutives pour reprendre le contrôle (1 = pas de confirmation)
 #define LORA_RESUME_GAP_MS        500    // écart max entre deux trames de la confirmation
@@ -61,6 +61,10 @@
 #define CMD_AXIS_NEUTRAL          31     // neutre des gouvernes (6 bits)
 
 #define LOG_SIZE 50             // 50 logs bufferisés avant écriture en flash
+
+// Vision
+#define VISION_BYTE_TIMEOUT_MS 20   // trame = 6,6 ms sur le fil : trame incomplète au-delà -> resynchro
+#define VISION_HAS_EXT 0            // 1 quand la carte vision enverra div, cout, t16
 
 // debug et vérifications unitaires
 #define DEBUG_STREAM_R 0    // 1 : envoie R_A_GRV sur le port série (banc), 0 : désactivé (vol)

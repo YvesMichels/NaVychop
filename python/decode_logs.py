@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Décodage et affichage des logs navychop (format binaire logging.h, version 1 ;
+"""Décodage et affichage des logs navychop (format binaire logging.h, versions 1 et 2 ;
 l'ancien format logState de 48 octets est aussi reconnu automatiquement).
+
+Version 2 : ajout de l'enregistrement REC_VISION (0xA5) = theta, tx, ty, div en Q8.8
+(8 bits entiers, 8 bits fractionnaires), cout 8 bits, date 16 bits.
 
 Spyder : renseigner FICHIER_BIN puis lancer le script (runfile). Aucune option requise.
 CLI    : python decode_logs.py logs.bin [--no-plot] [--no-csv]
 
 Produit :
-  - des DataFrames pandas : fast, acc, mag, gps (temps t en secondes depuis le début de la boucle)
-  - des CSV à côté du .bin : <nom>_fast.csv, _acc.csv, _mag.csv, _gps.csv et <nom>_merged.csv
-    (une ligne par boucle rapide, acc/mag/gps = dernière valeur connue : proche de l'ancien log.csv)
+  - des DataFrames pandas : fast, acc, mag, gps, vision (temps t en secondes depuis le début de la boucle)
+  - des CSV à côté du .bin : <nom>_fast.csv, _acc.csv, _mag.csv, _gps.csv, _vision.csv et <nom>_merged.csv
+    (une ligne par boucle rapide, acc/mag/gps/vision = dernière valeur connue ; colonnes vision préfixées v_)
   - les graphiques.
 """
 import struct
@@ -21,23 +24,31 @@ import pandas as pd
 FICHIER_BIN = "logs.bin"        # utilisé quand le script est lancé sans argument
 
 # --- format (doit rester identique à logging.h) ---
-REC_FAST, REC_ACC, REC_MAG, REC_GPS = 0xA1, 0xA2, 0xA3, 0xA4
+REC_FAST, REC_ACC, REC_MAG, REC_GPS, REC_VISION = 0xA1, 0xA2, 0xA3, 0xA4, 0xA5
 FMT = {
-    REC_FAST: "<BI4hh3h3h3B3bB",   # type, t_ms, q[4], altitude, eta[3], proj[3], cmd[3], ctrl[3], esc
-    REC_ACC:  "<BH3h",             # type, t16, a[3]
-    REC_MAG:  "<BH3h",             # type, t16, m[3]
-    REC_GPS:  "<BHiihBB",          # type, t16, lat_e7, lon_e7, alt_dm, hdop_x10, nsat
+    REC_FAST:   "<BI4hh3h3h3B3bB",   # type, t_ms, q[4], altitude, eta[3], proj[3], cmd[3], ctrl[3], esc
+    REC_ACC:    "<BH3h",             # type, t16, a[3]
+    REC_MAG:    "<BH3h",             # type, t16, m[3]
+    REC_GPS:    "<BHiihBB",          # type, t16, lat_e7, lon_e7, alt_dm, hdop_x10, nsat
+    REC_VISION: "<BH4hB",            # type, t16, theta, tx, ty, div, cost   (version 2 uniquement)
 }
 SIZE = {k: struct.calcsize(v) for k, v in FMT.items()}
-assert SIZE == {REC_FAST: 34, REC_ACC: 9, REC_MAG: 9, REC_GPS: 15}
+assert SIZE == {REC_FAST: 34, REC_ACC: 9, REC_MAG: 9, REC_GPS: 15, REC_VISION: 12}
 
 Q4, Q6, Q14 = 16.0, 64.0, 16384.0
+Q8 = 256.0                       # Q8.8 : 8 bits entiers, 8 bits fractionnaires (plage +-128)
+VISION_SCALE_THETA = Q8
+VISION_SCALE_T = Q8              # tx, ty
+VISION_SCALE_DIV = Q8
+VISION_COST_UNKNOWN = 255        # valeur "qualité inconnue" (tracée comme NaN)
 
 
 # --- ancien format (logState de communication.h, 48 octets, un enregistrement par boucle) ---
 LEGACY_FMT = "<I3h3h4hh3h3h3b3bB3x"   # t_ms, a[3], mag[3], q[4], alt, eta[3], proj[3], cmd[3], ctrl[3], esc, pad
 LEGACY_SIZE = struct.calcsize(LEGACY_FMT)
 assert LEGACY_SIZE == 48
+
+VISION_COLS = ["t", "theta", "tx", "ty", "div", "cost"]
 
 
 def parse_legacy(data: bytes):
@@ -62,11 +73,12 @@ def parse_legacy(data: bytes):
         df.drop(df.index[~keep], inplace=True)
         df.reset_index(drop=True, inplace=True)
     gps = pd.DataFrame(columns=["t", "lat", "lon", "gps_alt", "hdop", "nsat"])
-    return fast, acc, mag, gps, n
+    vision = pd.DataFrame(columns=VISION_COLS)
+    return fast, acc, mag, gps, vision, n
 
 
 def _t_from_t16(t16: int, t_ref_ms: int) -> int:
-    """Déroule un temps 16 bits au plus proche du dernier temps rapide connu."""
+    """Déroule un temps 16 bits au plus proche du dernier temps rapide connu (delta signé, +-32 s)."""
     delta = ((t16 - (t_ref_ms & 0xFFFF) + 32768) & 0xFFFF) - 32768
     return t_ref_ms + delta
 
@@ -79,8 +91,10 @@ def parse(data: bytes):
             f"16 premiers octets = {data[:16].hex(' ')}"
         )
     version, d_t = data[4], data[5]
-    if version != 1:
+    if version not in (1, 2):
         raise ValueError(f"version de format {version} non gérée")
+    # REC_VISION n'existe qu'à partir de la version 2
+    valid = set(FMT) if version >= 2 else set(FMT) - {REC_VISION}
 
     rows = {k: [] for k in FMT}
     pos, n = 8, len(data)
@@ -88,7 +102,7 @@ def parse(data: bytes):
     n_resync = 0
     while pos < n:
         t = data[pos]
-        if t not in FMT:                       # octet inattendu : on cherche le prochain type valide
+        if t not in valid:                     # octet inattendu : on cherche le prochain type valide
             n_resync += 1
             pos += 1
             continue
@@ -133,14 +147,26 @@ def to_frames(rows):
         "hdop": np.where(g[:, 5] == 255, np.nan, g[:, 5] / 10.0),   # 255 = pas de fix
         "nsat": g[:, 6],
     })
-    for df in (acc, mag, gps):
-        df.sort_values("t", inplace=True, ignore_index=True)       # le GPS est daté dans le passé
-    return fast, acc, mag, gps
+
+    v = np.array(rows[REC_VISION], dtype=np.int64).reshape(-1, 7)
+    vision = pd.DataFrame({
+        "t": v[:, 1] / 1000.0,
+        "theta": v[:, 2] / VISION_SCALE_THETA,
+        "tx": v[:, 3] / VISION_SCALE_T,
+        "ty": v[:, 4] / VISION_SCALE_T,
+        "div": v[:, 5] / VISION_SCALE_DIV,
+        "cost": np.where(v[:, 6] == VISION_COST_UNKNOWN, np.nan, v[:, 6]),
+    })
+
+    for df in (acc, mag, gps, vision):
+        df.sort_values("t", inplace=True, ignore_index=True)       # GPS et vision sont datés dans le passé
+    return fast, acc, mag, gps, vision
 
 
-def merged(fast, acc, mag, gps):
+def merged(fast, acc, mag, gps, vision):
     out = fast
-    for df in (acc, mag, gps):
+    vis = vision.rename(columns={c: f"v_{c}" for c in vision.columns if c != "t"})
+    for df in (acc, mag, gps, vis):
         if len(df):
             out = pd.merge_asof(out, df, on="t", direction="backward")
     return out
@@ -156,10 +182,10 @@ def euler_deg(q):
     return np.degrees(roll), np.degrees(pitch), np.degrees(yaw)
 
 
-def plot(fast, acc, mag, gps):
+def plot(fast, acc, mag, gps, vision):
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(5, 2, figsize=(15, 14), sharex=False)
+    fig, ax = plt.subplots(6, 2, figsize=(15, 17), sharex=False)
     ax = ax.ravel()
 
     r, p, y = euler_deg(fast)
@@ -215,7 +241,21 @@ def plot(fast, acc, mag, gps):
     else:
         ax[9].set_title("GPS : aucun point valide")
 
-    for a in ax[:9]:
+    if len(vision):
+        ax[10].plot(vision.t, vision.theta, ".-", label="theta")
+        ax[10].plot(vision.t, vision.tx, ".-", label="tx")
+        ax[10].plot(vision.t, vision.ty, ".-", label="ty")
+        ax[10].legend()
+        ax[11].plot(vision.t, vision.cost, ".-", color="tab:red", label="coût")
+        ax[11].set_ylabel("coût")
+        if vision["div"].abs().sum() > 0:             # div pas encore transmis : on ne trace pas du zéro
+            ax2 = ax[11].twinx()
+            ax2.plot(vision.t, vision["div"], ".-", color="tab:blue", label="div")
+            ax2.set_ylabel("div")
+    ax[10].set_title("Vision : mouvement estimé (theta, tx, ty ; Q8.8)")
+    ax[11].set_title("Vision : coût de l'estimation (et div)")
+
+    for a in list(ax[:9]) + [ax[10], ax[11]]:
         a.set_xlabel("t (s)"); a.grid(True, alpha=0.3)
     ax[9].grid(True, alpha=0.3)
     fig.tight_layout()
@@ -229,29 +269,30 @@ def main(argv=None):
 
     data = path.read_bytes()
     if data[:4] != b"NVCH" and len(data) % LEGACY_SIZE == 0 and len(data) > 0:
-        fast, acc, mag, gps, n = parse_legacy(data)
+        fast, acc, mag, gps, vision, n = parse_legacy(data)
         print(f"{path} : ANCIEN FORMAT logState ({len(data)} o = {n} x {LEGACY_SIZE}) ; "
               f"le firmware n'a pas enregistré avec le nouveau module logging")
         duree = fast.t.iloc[-1] - fast.t.iloc[0] if len(fast) else 0
-        print(f"durée {duree:.1f} s | fast {len(fast)}, acc {len(acc)} (changements), mag {len(mag)} (changements), gps 0")
+        print(f"durée {duree:.1f} s | fast {len(fast)}, acc {len(acc)} (changements), "
+              f"mag {len(mag)} (changements), gps 0, vision 0")
     else:
         rows, info = parse(data)
-        fast, acc, mag, gps = to_frames(rows)
+        fast, acc, mag, gps, vision = to_frames(rows)
         duree = fast.t.iloc[-1] - fast.t.iloc[0] if len(fast) else 0
-        print(f"{path} : {info['octets']} o, durée {duree:.1f} s | fast {len(fast)}, acc {len(acc)}, "
-              f"mag {len(mag)}, gps {len(gps)} | octets ignorés (resync) {info['resync']}, "
-              f"fin tronquée {info['octets_ignores_fin']} o")
+        print(f"{path} : {info['octets']} o (format v{info['version']}), durée {duree:.1f} s | "
+              f"fast {len(fast)}, acc {len(acc)}, mag {len(mag)}, gps {len(gps)}, vision {len(vision)} | "
+              f"octets ignorés (resync) {info['resync']}, fin tronquée {info['octets_ignores_fin']} o")
 
     if "--no-csv" not in argv:
         stem = path.with_suffix("")
-        for name, df in (("fast", fast), ("acc", acc), ("mag", mag), ("gps", gps)):
+        for name, df in (("fast", fast), ("acc", acc), ("mag", mag), ("gps", gps), ("vision", vision)):
             df.to_csv(f"{stem}_{name}.csv", index=False)
-        merged(fast, acc, mag, gps).to_csv(f"{stem}_merged.csv", index=False)
+        merged(fast, acc, mag, gps, vision).to_csv(f"{stem}_merged.csv", index=False)
         print(f"CSV écrits à côté de {path.name}")
     if "--no-plot" not in argv:
-        plot(fast, acc, mag, gps)
-    return fast, acc, mag, gps
+        plot(fast, acc, mag, gps, vision)
+    return fast, acc, mag, gps, vision
 
 
 if __name__ == "__main__":
-    fast, acc, mag, gps = main()
+    fast, acc, mag, gps, vision = main()

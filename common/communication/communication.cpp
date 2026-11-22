@@ -8,6 +8,73 @@
 #define Q6_SCALE   64.0f
 #define Q14_SCALE  16384.0f
 
+static VisionStats g_vs;
+const VisionStats &vision_stats() { return g_vs; }
+
+bool readVisionFrame(HardwareSerial &port, vision_frame_t &out, uint32_t t_now_ms)
+{
+    static uint8_t  buf[VISION_FRAME_SIZE];
+    static uint8_t  idx = 0;
+    static uint32_t t_last_byte = 0;
+    static const uint8_t sync[4] = { SYNC_1, SYNC_2, SYNC_3, SYNC_4 };
+
+    const uint32_t t0 = micros();
+    const uint32_t avail = port.available();
+    if (avail > g_vs.max_avail) g_vs.max_avail = avail;
+
+    // trame restée incomplète (octet perdu) : on abandonne pour ne pas avaler la suivante
+    if (idx > 0 && avail == 0 && (millis() - t_last_byte) > VISION_BYTE_TIMEOUT_MS) {
+        idx = 0;
+        g_vs.n_timeout++;
+    }
+
+    bool got = false;
+    while (!got && port.available()) {
+        const uint8_t b = port.read();
+        t_last_byte = millis();
+
+        if (idx < 4 && b != sync[idx]) {          // échec de synchro : b peut être un nouveau SYNC_1
+            idx = (b == SYNC_1) ? 1 : 0;
+            if (idx) buf[0] = b;
+            continue;
+        }
+        buf[idx++] = b;
+        if (idx < VISION_FRAME_SIZE) continue;
+        idx = 0;
+
+        uint8_t cs = 0;
+        for (int i = 0; i < VISION_FRAME_SIZE - 1; i++) cs ^= buf[i];
+        if (cs != buf[VISION_FRAME_SIZE - 1]) { g_vs.n_bad_cs++;  continue; }
+        if (buf[4] != TRANSFORM_FORMAT)       { g_vs.n_bad_fmt++; continue; }
+
+        auto rd16 = [&](int o) { return (int16_t)(uint16_t)(buf[o] | (buf[o + 1] << 8)); };
+        out.theta = rd16(5);
+        out.tx    = rd16(7);
+        out.ty    = rd16(9);
+
+        int k = 11;
+        for (int i = 0; i < 16; i++, k += 4)
+            out.logs[i] = (int32_t)((uint32_t)buf[k] | ((uint32_t)buf[k+1] << 8) |
+                                    ((uint32_t)buf[k+2] << 16) | ((uint32_t)buf[k+3] << 24));
+
+#if VISION_HAS_EXT
+        // À adapter au vrai format une fois la carte vision modifiée
+        out.div  = rd16(VISION_OFF_DIV);
+        out.cost = buf[VISION_OFF_COST];
+        out.t16  = (uint16_t)(buf[VISION_OFF_T] | (buf[VISION_OFF_T + 1] << 8));
+#else
+        out.div  = 0;
+        out.cost = 255;
+        out.t16  = (uint16_t)t_now_ms;   // repli : date de réception (retard ~7 ms + latence d'estimation)
+#endif
+        g_vs.n_ok++;
+        got = true;
+    }
+
+    const uint32_t dt = micros() - t0;
+    if (dt > g_vs.max_parse_us) g_vs.max_parse_us = dt;
+    return got;
+}
 
 void quantif_angle(int8_t* delta_angle, float angle, int16_t* last_angle, uint8_t nbits, uint8_t binpt) {
     int16_t buffer;

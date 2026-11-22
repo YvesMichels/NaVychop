@@ -83,6 +83,27 @@ struct CmdState {
     uint16_t n_lost;          // nombre de passages en failsafe
 };
 
+struct vision_frame_t {
+    int16_t  theta;
+    int16_t  tx;
+    int16_t  ty;
+    int16_t  div;      // pas encore transmis par la carte vision
+    uint8_t  cost;     // qualité de l'estimation (255 = inconnu)
+    uint16_t t16;      // date (ms, base millis()-t_0) tronquée à 16 bits
+    int32_t  logs[16];
+};
+
+struct VisionStats {
+    uint32_t n_ok, n_bad_cs, n_bad_fmt, n_timeout;
+    uint32_t max_avail;      // remplissage max du buffer RX vu à l'appel
+    uint32_t max_parse_us;   // pire durée d'un appel
+};
+
+// Non bloquant. Renvoie true si une trame valide vient d'être décodée dans out.
+// t_now_ms = millis() - t_0 (sert de date de repli si la trame n'en porte pas).
+bool readVisionFrame(HardwareSerial &port, vision_frame_t &out, uint32_t t_now_ms);
+const VisionStats &vision_stats();
+
 void quantif_angle(int8_t* delta_angle, float angle, int16_t* last_angle, uint8_t nbits, uint8_t binpt);
 bool lora_check_and_echo();
 
